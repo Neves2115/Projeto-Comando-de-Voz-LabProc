@@ -22,5 +22,4 @@ python -m  src.main
 2. Servo
 3. LCD
 4. Sensor de distância
-5. Matriz de LEDs
-6. Reconhecimento de fala com Vosk
+5. Reconhecimento de fala com Vosk

@@ -4,7 +4,7 @@
 
 # 1. Introdução
 
-Este projeto propõe uma central de comandos por voz executada em Raspberry Pi 3 com periféricos do kit Freenove. A ideia é criar uma solução simples, demonstrável e útil, capaz de reconhecer comandos curtos e acionar LEDs, servomotor, LCD, matriz de LEDs e sensor de distância.
+Este projeto propõe uma central de comandos por voz executada em Raspberry Pi 3 com periféricos do kit Freenove. A ideia é criar uma solução simples, demonstrável e útil, capaz de reconhecer comandos curtos e acionar LEDs, servomotor, LCD e sensor de distância.
 
 # 2. Motivação
 
@@ -18,7 +18,7 @@ O projeto é interessante porque une três aspectos importantes:
 
 # 3. Objetivo geral
 
-Desenvolver uma central local de comandos por voz para o kit Freenove, rodando em Raspberry Pi 3, capaz de interpretar frases simples e executar ações no hardware com retorno imediato ao usuário.
+Desenvolver uma central local de comandos por voz para o kit Freenove, rodando em Raspberry Pi 3, capaz de interpretar frases simples e executar ações no hardware com retorno ao usuário.
 
 # 4. Requisitos
 
