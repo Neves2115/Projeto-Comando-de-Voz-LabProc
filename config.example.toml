@@ -1,0 +1,56 @@
+# Copie para config.toml e ajuste. Tudo aqui e opcional.
+
+# true = nao toca em nenhum pino GPIO (roda em qualquer maquina)
+mock = false
+
+# Backend de GPIO. Deixe comentado para escolher sozinho (prefere lgpio).
+# pin_factory = "pigpio"
+
+# "button" = botao fisico no GPIO26; "keyboard" = ENTER.
+# Use "keyboard" enquanto o botao nao estiver ligado.
+trigger = "button"
+
+log_level = "INFO"
+save_recordings = false   # true grava os .wav para depurar reconhecimento ruim
+
+[pins]
+leds = [17]
+servo = 18                # GPIO18 = PWM por hardware
+button = 26               # botao push-to-talk: GPIO26 -> GND
+distance_trigger = 23
+distance_echo = 24        # use divisor de tensao! o HC-SR04 devolve 5V
+matrix_data = 5
+matrix_clock = 6
+matrix_latch = 13
+
+[lcd]
+enabled = true
+i2c_bus = 1
+# address = "0x27"        # descoberto sozinho; force se o i2cdetect mostrar outro
+cols = 16
+rows = 2
+page_delay_s = 2.2        # tempo de cada pagina quando o texto nao cabe
+
+[matrix]
+enabled = false           # ligue depois de conferir a fiacao dos 74HC595
+refresh_hz = 160.0
+
+[audio]
+sample_rate = 16000
+# input_device = 1        # veja os indices com: voz devices
+# O projeto negocia a taxa com o microfone. 16000 e so a preferencia inicial:
+# se o dispositivo recusar, ele usa 48000/44100 e o Vosk reamostra.
+max_utterance_s = 12.0
+min_utterance_s = 0.35
+
+[speech]
+model_path = "models/vosk-model-small-pt-0.3"
+use_grammar = true        # restringe o vocabulario aos comandos conhecidos
+match_threshold = 0.70    # menor = aceita mais, erra mais
+
+[behavior]
+servo_open_angle = 90.0
+servo_closed_angle = 0.0
+distance_warning_cm = 20.0
+monitor_duration_s = 15.0
+dictation_timeout_s = 45.0

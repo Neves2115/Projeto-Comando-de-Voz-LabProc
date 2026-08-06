@@ -1,3 +1,0 @@
-gpiozero
-vosk
-sounddevice
