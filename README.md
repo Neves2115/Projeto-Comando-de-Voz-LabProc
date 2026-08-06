@@ -16,7 +16,7 @@
 ```bash
 python -m  src.main
 ```
-
+ 
 ## Ordem recomendada de integração
 1. LED
 2. Servo
