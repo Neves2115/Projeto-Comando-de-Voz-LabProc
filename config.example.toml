@@ -38,8 +38,8 @@ distance_trigger = 14
 distance_echo = 15       # use divisor de tensao! o HC-SR04 devolve 5V
 
 # Matriz 8x8 (74HC595). NAO pode colidir com os pinos do LED RGB acima.
-matrix_data = 17
-matrix_clock = 22
+matrix_data = 22
+matrix_clock = 17
 matrix_latch = 27
 
 [lcd]

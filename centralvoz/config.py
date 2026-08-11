@@ -38,8 +38,8 @@ class PinConfig:
     # Matriz 8x8 com dois 74HC595 encadeados (opcional).
     # ATENCAO: em conflito com os pinos do LED RGB acima. Se for usar a matriz,
     # mova-a para outros pinos livres (ex.: 16, 20, 21).
-    matrix_data: int = 17
-    matrix_clock: int = 22
+    matrix_data: int = 22
+    matrix_clock: int = 17
     matrix_latch: int = 27
 
 
