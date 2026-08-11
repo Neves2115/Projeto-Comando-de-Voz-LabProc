@@ -153,6 +153,23 @@ respondia "Desenhando coração" e nada acontecia.
 handler detecta `NullPeripheral` e avisa que ela está desativada em vez de
 afirmar que desenhou.
 
+### 13. Gramática do Vosk sem acentos (crítico para a acurácia)
+
+A gramática entregue ao Vosk era montada com `normalize_text`, que **remove
+acentos**. Das 396 frases, zero tinham acentuação. O léxico do modelo de
+português conhece "coração", "distância", "música" — palavras como "coracao"
+simplesmente não existem para ele.
+
+Duas consequências: o decodificador nunca conseguia produzir essas palavras, e
+uma única palavra fora do léxico faz o Vosk **rejeitar a gramática inteira**,
+caindo em reconhecimento livre sem avisar. Ou seja, parte das sessões rodava sem
+a restrição que dá precisão aos comandos.
+
+**Correção:** `utils.for_grammar()` (minúsculas e sem pontuação, mas
+preservando acentos) para montar a gramática; `normalize_text()` continua sendo
+usado só para comparar. As frases em `router.py` foram reescritas acentuadas.
+`voz doctor` passou a verificar se a gramática é aceita.
+
 ## Verificações que ficaram no CI
 
 | Teste | O que previne |
@@ -173,6 +190,9 @@ afirmar que desenhou.
 | `test_matriz_desativada_avisa_em_vez_de_mentir` | comando que finge ter funcionado |
 | `test_todas_as_melodias_usam_notas_validas` | melodia com nota inexistente |
 | `test_par_prefere_o_passivo_para_melodias` | melodia indo para o buzzer errado |
+| `test_gramatica_preserva_acentos` | volta da gramática rejeitada pelo Vosk |
+| `test_casamento_ignora_acento` | acento quebrando o casamento |
+| `test_todos_os_icones_sao_validos` | ícone com padrão malformado |
 
 ## O que revisei e está correto
 

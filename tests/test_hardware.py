@@ -447,3 +447,35 @@ def test_todas_as_melodias_usam_notas_validas() -> None:
         for nota, duracao in melodia:
             assert nota in NOTES, f"{nome}: nota desconhecida {nota!r}"
             assert duracao > 0, f"{nome}: duracao invalida"
+
+
+def test_todos_os_icones_sao_validos() -> None:
+    from centralvoz.hardware.matrix import ICONS, pattern_to_rows
+
+    assert len(ICONS) >= 10
+    for nome, padrao in ICONS.items():
+        linhas = pattern_to_rows(padrao)
+        assert len(linhas) == 8, nome
+        assert any(v for v in linhas), f"{nome} esta todo apagado"
+
+
+def test_resolve_icon_aceita_apelidos() -> None:
+    from centralvoz.hardware.matrix import resolve_icon
+
+    assert resolve_icon("carinha feliz") == "sorriso"
+    assert resolve_icon("rosto triste") == "triste"
+    assert resolve_icon("desenhar coracao") == "coracao"
+    assert resolve_icon("mostrar nota") == "musica"
+    assert resolve_icon("nada disso aqui") is None
+
+
+def test_feedback_de_proximidade_escala() -> None:
+    """Perto = vermelho e bipe rapido; longe = verde e bipe espacado."""
+    from centralvoz.commands.handlers import _proximity_feedback
+
+    perto_cor, perto_int = _proximity_feedback(10.0, 20.0)
+    medio_cor, medio_int = _proximity_feedback(35.0, 20.0)
+    longe_cor, longe_int = _proximity_feedback(120.0, 20.0)
+
+    assert (perto_cor, medio_cor, longe_cor) == ("vermelho", "amarelo", "verde")
+    assert perto_int < medio_int < longe_int

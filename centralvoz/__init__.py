@@ -1,3 +1,3 @@
 """Central de comandos por voz offline para Raspberry Pi 3 + kit Freenove."""
 
-__version__ = "0.4.0"
+__version__ = "0.4.1"

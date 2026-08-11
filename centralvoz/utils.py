@@ -30,6 +30,25 @@ def to_ascii(text: str) -> str:
     return "".join(ch if ord(ch) < 128 else "?" for ch in stripped)
 
 
+_NON_WORD_ACCENTED = re.compile(r"[^0-9a-zà-öø-ÿ\s]", re.IGNORECASE)
+
+
+def for_grammar(text: str) -> str:
+    """Minusculas e sem pontuacao, MAS preservando os acentos.
+
+    A gramatica do Vosk so funciona com palavras que existem no lexico do
+    modelo. O modelo de portugues tem "coracao" grafado como "coração": mandar
+    a versao sem acento cria uma palavra desconhecida, que o decodificador
+    nunca consegue produzir -- e que pode fazer o Vosk rejeitar a gramatica
+    inteira.
+
+    Por isso a normalizacao agressiva (`normalize_text`, que tira acentos) serve
+    para COMPARAR o que foi ouvido, e esta aqui serve para MONTAR a gramatica.
+    """
+    limpo = _NON_WORD_ACCENTED.sub(" ", (text or "").strip().lower())
+    return _SPACES.sub(" ", limpo).strip()
+
+
 def tokens(text: str) -> list[str]:
     normalized = normalize_text(text)
     return normalized.split() if normalized else []

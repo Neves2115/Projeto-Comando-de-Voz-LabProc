@@ -270,19 +270,24 @@ def _distance_monitor(ctx: Context) -> Reply:
 
             menor = min(menor, valor)
             perto = valor <= limite
+
+            # Cor e ritmo do bipe acompanham a proximidade, como um sensor de
+            # re: longe = verde e bipe espacado; perto = vermelho e bipe rapido.
+            cor, intervalo = _proximity_feedback(valor, limite)
+            hardware.leds.set_named(cor)
+
             if perto:
                 alertas += 1
-                hardware.leds.set_named("vermelho")
                 hardware.matrix.show_icon("alerta")
                 hardware.lcd.show_lines("ALERTA perto!", f"{valor:.1f} cm")
-                if ctx.config.buzzer.feedback_sounds:
-                    hardware.buzzers.play("alerta")
             else:
-                hardware.leds.set_named("verde")
                 hardware.matrix.show_icon("ok")
                 hardware.lcd.show_lines("Monitorando", f"{valor:.1f} cm")
 
-            if cancel.wait(0.4):
+            if ctx.config.buzzer.feedback_sounds:
+                hardware.buzzers.beep(times=1, on_time=0.05)
+
+            if cancel.wait(intervalo):
                 break
 
         hardware.leds.off()
@@ -298,6 +303,19 @@ def _distance_monitor(ctx: Context) -> Reply:
         f"Monitorando por {behavior.monitor_duration_s:.0f} s. Diga 'parar' para interromper.",
         "Monitorando", "diga parar", icon="ouvindo",
     )
+
+
+def _proximity_feedback(distancia: float, limite: float) -> tuple[str, float]:
+    """Cor do LED e intervalo entre bipes, conforme a proximidade.
+
+    Escala em tres faixas em vez de so perto/longe: da para *ouvir* o objeto
+    se aproximando, que e o comportamento util num sensor de re.
+    """
+    if distancia <= limite:                 # zona de alerta
+        return "vermelho", 0.18
+    if distancia <= limite * 2.5:           # aproximando
+        return "amarelo", 0.45
+    return "verde", 0.9                     # livre
 
 
 @handles(Intent.STOP_TASK)
@@ -521,7 +539,7 @@ def _party_mode(ctx: Context) -> Reply:
 def _matrix_draw(ctx: Context) -> Reply:
     """O desenho vem da propria fala: 'desenhar coracao' -> icone coracao."""
     from ..hardware.base import NullPeripheral
-    from ..hardware.matrix import ICONS
+    from ..hardware.matrix import resolve_icon
 
     # Antes, com a matriz desativada, este comando dizia "Desenhando coracao"
     # e nao acontecia nada -- o NullPeripheral engolia a chamada em silencio.
@@ -532,9 +550,10 @@ def _matrix_draw(ctx: Context) -> Reply:
             "Matriz off", "veja o config", icon="alerta",
         )
 
-    dito = normalize_text(ctx.heard)
-    nome = next((icone for icone in ICONS if icone in dito), "ok")
+    nome = resolve_icon(normalize_text(ctx.heard)) or "sorriso"
     ctx.hardware.matrix.show_icon(nome)
+    if ctx.config.buzzer.feedback_sounds:
+        ctx.hardware.buzzers.play("ok")
     return Reply(f"Desenhando {nome}", "Desenho", nome, icon=nome)
 
 

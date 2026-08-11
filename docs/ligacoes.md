@@ -17,8 +17,8 @@ física da barra de pinos.
 | Botão push-to-talk | — | 26 | 37 | outro terminal no GND (pino 39) |
 | Buzzer ativo | sinal | 17 | 11 | módulo com transistor |
 | Buzzer passivo | sinal | 27 | 13 | precisa de PWM para tocar notas |
-| HC-SR04 | TRIG | 14 | 16 | |
-| HC-SR04 | ECHO | 15 | 18 | **divisor de tensão obrigatório** |
+| HC-SR04 | TRIG | 23 | 16 | |
+| HC-SR04 | ECHO | 24 | 18 | **divisor de tensão obrigatório** |
 | HC-SR04 | VCC | — | 2 (5 V) | |
 | LCD 1602 I2C | SDA | 2 | 3 | |
 | LCD 1602 I2C | SCL | 3 | 5 | |

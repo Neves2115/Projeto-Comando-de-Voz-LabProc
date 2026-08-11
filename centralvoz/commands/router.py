@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 
 from ..hardware.rgb import COLORS
-from ..utils import normalize_text, tokens
+from ..utils import for_grammar, normalize_text, tokens
 from .intents import Intent
 from .numbers import PLACEHOLDER, number_to_words, replace_numbers
 
@@ -114,7 +114,9 @@ class CommandRouter:
             if not rule.in_grammar:
                 continue
             for phrase in rule.phrases:
-                for expandida in _expand(normalize_text(phrase), rule.numbers):
+                # for_grammar, nao normalize_text: a gramatica precisa das
+                # palavras exatamente como o lexico do modelo as conhece.
+                for expandida in _expand(for_grammar(phrase), rule.numbers):
                     phrases.add(expandida)
         return sorted(p for p in phrases if p)
 
@@ -164,18 +166,28 @@ class CommandRouter:
     CONTAGENS = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
 
     def _install_defaults(self) -> None:
+        """Frases de referencia.
+
+        ESCREVA SEMPRE COM ACENTO. A gramatica entregue ao Vosk usa estas
+        palavras como estao, e o lexico do modelo de portugues conhece
+        "coração", nao "coracao". Mandar a versao sem acento cria uma palavra
+        desconhecida que o decodificador nunca consegue produzir.
+
+        A comparacao com o que foi ouvido continua ignorando acentos, entao
+        escrever certo aqui nao atrapalha o casamento.
+        """
         r = self.register
 
         # --- LED RGB -------------------------------------------------- #
         # "led" e uma sigla estrangeira e o modelo pequeno de portugues erra
         # muito nela. Por isso cada comando tem variantes com "luz" (palavra
-        # comum, que o modelo acerta) e grafias foneticas do que o Vosk
-        # costuma transcrever no lugar de "led": "lede", "lete", "leite".
+        # comum, que o modelo acerta) e grafias do que o Vosk costuma
+        # transcrever no lugar de "led".
         r(Intent.LED_ON, "ligar led", "acender led", "ligar luz", "acender a luz",
-          "ligar lede", "acender lede", "ligar a lampada", "acender lampada",
+          "ligar lede", "acender lede", "ligar a lâmpada", "acender lâmpada",
           help_text="ligar luz")
         r(Intent.LED_OFF, "desligar led", "apagar led", "desligar luz",
-          "apagar a luz", "desligar lede", "apagar lede", "apagar lampada",
+          "apagar a luz", "desligar lede", "apagar lede", "apagar lâmpada",
           help_text="desligar luz")
         r(Intent.LED_BLINK, "piscar led", "piscar luz", "pisca pisca",
           "piscar lede", help_text="piscar luz")
@@ -188,16 +200,16 @@ class CommandRouter:
         r(Intent.LED_COLOR, "acender cor", "ligar cor", "luz cor", "led cor",
           "mudar para cor", "cor", "pintar de cor",
           # Variantes de 3 tokens: sem elas "ligar luz amarela" casaria com
-          # "ligar luz" (LED_ON) e a cor seria ignorada. O desempate por
-          # especificidade cuida do resto.
+          # "ligar luz" (LED_ON) e a cor seria ignorada.
           "ligar luz cor", "acender luz cor", "ligar led cor", "acender led cor",
           "deixar a luz cor", "mudar a luz para cor", "acender a luz cor",
           help_text="acender <cor>")
-        r(Intent.LED_CYCLE, "trocar de cor", "ciclo de cores", "arco iris",
-          "passar as cores", "modo arco iris",
+        r(Intent.LED_CYCLE, "trocar de cor", "ciclo de cores", "arco íris",
+          "passar as cores", "modo arco íris",
           help_text="trocar de cor")
         r(Intent.LED_BRIGHTNESS, "brilho numero por cento", "brilho numero",
-          help_text="brilho N por cento", numbers=(10, 20, 30, 40, 50, 60, 70, 80, 90, 100))
+          help_text="brilho N por cento",
+          numbers=(10, 20, 30, 40, 50, 60, 70, 80, 90, 100))
 
         # --- Servo ---------------------------------------------------- #
         r(Intent.SERVO_OPEN, "abrir servo", "abrir porta", "girar servo",
@@ -211,30 +223,32 @@ class CommandRouter:
           help_text="servo N graus", numbers=self.ANGULOS)
 
         # --- Distancia ------------------------------------------------ #
-        r(Intent.DISTANCE_READ, "mostrar distancia", "ler distancia", "ver distancia",
-          "qual a distancia", help_text="mostrar distancia")
-        r(Intent.DISTANCE_MONITOR, "monitorar distancia", "modo alerta", "ativar alerta",
-          "vigiar distancia", help_text="monitorar distancia")
+        r(Intent.DISTANCE_READ, "mostrar distância", "ler distância",
+          "ver distância", "qual a distância", "medir distância",
+          help_text="mostrar distância")
+        r(Intent.DISTANCE_MONITOR, "monitorar distância", "modo alerta",
+          "ativar alerta", "vigiar distância", "modo sentinela",
+          help_text="monitorar distância")
         r(Intent.STOP_TASK, "parar", "pare", "cancelar", "chega", "parar tudo",
-          help_text="parar (cancela o que esta rodando)")
+          help_text="parar (cancela o que está rodando)")
 
         # --- Buzzers -------------------------------------------------- #
         r(Intent.BUZZER_BEEP, "apitar", "bipar", "dar um bipe", "buzina",
           "tocar bipe", help_text="apitar")
-        r(Intent.BUZZER_MELODY, "tocar musica", "tocar melodia", "tocar escala",
-          "tocar parabens", "tocar uma musica", "cantar parabens",
-          help_text="tocar musica")
+        r(Intent.BUZZER_MELODY, "tocar música", "tocar melodia", "tocar escala",
+          "tocar parabéns", "tocar uma música", "cantar parabéns",
+          help_text="tocar música")
         r(Intent.BUZZER_ALARM, "tocar alarme", "ligar alarme", "soar alarme",
           "modo alarme", "sirene", help_text="tocar alarme")
         r(Intent.BUZZER_SILENCE, "silenciar", "calar", "parar o som",
-          "parar musica", "sem som", help_text="silenciar")
+          "parar música", "sem som", help_text="silenciar")
 
         # --- Ditado e recados ----------------------------------------- #
         r(Intent.DICTATION_START, "transcrever", "modo ditado", "anotar recado",
           "escrever no display", "tomar nota",
           help_text="transcrever (ditado no LCD)")
-        r(Intent.DICTATION_STOP, "parar ditado", "encerrar ditado", "sair do ditado",
-          help_text="parar ditado")
+        r(Intent.DICTATION_STOP, "parar ditado", "encerrar ditado",
+          "sair do ditado", help_text="parar ditado")
         r(Intent.NOTES_LIST, "ler recados", "mostrar recados", "listar notas",
           help_text="ler recados")
         r(Intent.NOTES_CLEAR, "apagar recados", "limpar recados", "esquecer tudo",
@@ -243,17 +257,27 @@ class CommandRouter:
           help_text="repetir")
 
         # --- Sistema -------------------------------------------------- #
-        r(Intent.CLOCK, "que horas sao", "mostrar hora", "ver as horas",
-          help_text="que horas sao")
-        r(Intent.SYSTEM_STATUS, "status do sistema", "temperatura da cpu", "ver status",
-          help_text="status do sistema")
+        r(Intent.CLOCK, "que horas são", "mostrar hora", "ver as horas",
+          help_text="que horas são")
+        r(Intent.SYSTEM_STATUS, "status do sistema", "temperatura da cpu",
+          "ver status", help_text="status do sistema")
         r(Intent.HELP, "ajuda", "quais comandos", "listar comandos",
           help_text="ajuda")
         r(Intent.PARTY_MODE, "modo festa", "festa", "comemorar",
           help_text="modo festa")
-        r(Intent.MATRIX_DRAW, "desenhar coracao", "desenhar casa", "desenhar alerta",
-          "desenhar ok", "mostrar desenho",
-          help_text="desenhar coracao/casa/alerta")
+
+        # Desenhos. Cada icone tem varias formas de pedir, porque o modelo
+        # pequeno erra em palavra isolada com mais frequencia.
+        r(Intent.MATRIX_DRAW,
+          "desenhar coração", "mostrar coração", "fazer um coração", "coração",
+          "desenhar sorriso", "mostrar sorriso", "carinha feliz", "rosto feliz",
+          "desenhar triste", "carinha triste", "rosto triste",
+          "desenhar casa", "mostrar casa",
+          "desenhar estrela", "mostrar estrela",
+          "desenhar seta", "desenhar alerta", "desenhar ok", "desenhar erro",
+          "desenhar gato", "desenhar música", "mostrar desenho",
+          help_text="desenhar coração/sorriso/estrela/casa")
+
         r(Intent.CLEAR, "limpar tela", "limpar display", "apagar tudo",
           help_text="limpar tela")
         r(Intent.SHUTDOWN, "desligar sistema", "encerrar programa", "tchau",

@@ -28,19 +28,19 @@ class PinConfig:
     servo: int = 18  # GPIO18 = pino de PWM por hardware, o melhor para servo
     button: int = 26  # botao push-to-talk, ligado entre o GPIO e o GND
     # Buzzers do kit. O ativo so liga/desliga; o passivo toca notas (precisa PWM).
-    buzzer_active: int = 12
-    buzzer_passive: int = 4
+    buzzer_active: int = 17
+    buzzer_passive: int = 27
     #: Alguns modulos de buzzer ativo acionam em nivel BAIXO.
     buzzer_active_high: bool = True
 
-    distance_trigger: int = 14
-    distance_echo: int = 15  # ATENCAO: use divisor de tensao, o echo do HC-SR04 e 5V
+    distance_trigger: int = 23
+    distance_echo: int = 24  # ATENCAO: use divisor de tensao, o echo do HC-SR04 e 5V
     # Matriz 8x8 com dois 74HC595 encadeados (opcional).
     # ATENCAO: em conflito com os pinos do LED RGB acima. Se for usar a matriz,
     # mova-a para outros pinos livres (ex.: 16, 20, 21).
-    matrix_data: int = 22
-    matrix_clock: int = 17
-    matrix_latch: int = 27
+    matrix_data: int = 16
+    matrix_clock: int = 20
+    matrix_latch: int = 21
 
 
 @dataclass

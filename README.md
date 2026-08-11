@@ -83,7 +83,7 @@ qualquer problema de PWM.
 | fechar servo / fechar porta | servo volta para 0° |
 | varrer servo | varredura completa (teste) |
 | mostrar distância | lê o HC-SR04 e mostra no LCD |
-| monitorar distância / modo alerta | vigia em segundo plano; verde = livre, vermelho = perto |
+| monitorar distância / modo alerta | sensor de ré: verde e bipe lento = livre, amarelo = aproximando, vermelho e bipe rápido = perto |
 | **parar / cancelar** | interrompe o que estiver rodando |
 | **transcrever / modo ditado** | **tudo que você falar vira texto no LCD e é salvo** |
 | parar ditado | volta ao modo de comandos |
@@ -95,7 +95,7 @@ qualquer problema de PWM.
 | limpar tela | apaga LCD, LED e matriz |
 | piscar led N vezes | ex.: "piscar led cinco vezes" |
 | servo N graus | ex.: "servo cento e oitenta graus" |
-| desenhar coração / casa / alerta | ícone na matriz |
+| desenhar coração / sorriso / estrela / casa / gato / seta / triste | ícone na matriz |
 | modo festa | LED, servo e matriz juntos por 12 s (bom para demo) |
 | apagar recados | limpa as anotações |
 | apitar / bipar | bipes no buzzer ativo |
@@ -124,8 +124,8 @@ Pinagem padrão (numeração BCM), toda configurável em `config.toml`:
 | Botão push-to-talk | GPIO26 → GND (pull-up interno) |
 | HC-SR04 | TRIG GPIO23, ECHO GPIO24 **com divisor de tensão** |
 | LCD 1602 I2C | SDA GPIO2, SCL GPIO3, VCC 5 V, GND |
-| Buzzer ativo | GPIO12 |
-| Buzzer passivo | GPIO4 (PWM para tocar notas) |
+| Buzzer ativo | GPIO17 |
+| Buzzer passivo | GPIO27 (PWM para tocar notas) |
 | Matriz 8x8 (74HC595) | DS GPIO16, SHCP GPIO20, STCP GPIO21 |
 
 ⚠️ O ECHO do HC-SR04 entrega 5 V e o GPIO só aceita 3,3 V. Use divisor
@@ -283,6 +283,22 @@ momento. Um comando novo também cancela o anterior.
 
 Isso é uma correção, não um enfeite — a versão anterior travava o loop principal
 durante o monitoramento. Os detalhes estão em [`docs/CODE_REVIEW.md`](docs/CODE_REVIEW.md).
+
+## Reconhecimento ruim? Leia isto antes de trocar de modelo
+
+O ditado é naturalmente pior que os comandos: com gramática restrita o Vosk só
+pode produzir ~400 frases conhecidas; no ditado ele escolhe entre ~200.000
+palavras. Um modelo maior **não** é a solução no Pi 3 — o modelo grande de
+português usa ~2,5 GB de RAM e a placa tem 1 GB.
+
+Até a v0.4.0 havia um bug real por trás disso: a gramática era montada sem
+acentos ("coracao"), e o léxico do modelo conhece "coração". Uma palavra
+desconhecida faz o Vosk **rejeitar a gramática inteira** e cair no modo livre
+sem avisar — daí comandos como "desenhar coração" nunca funcionarem.
+
+`voz doctor` agora testa se a gramática é aceita. A análise completa, com a
+tabela de memória e o que de fato melhora a acurácia, está em
+[`docs/RECONHECIMENTO.md`](docs/RECONHECIMENTO.md).
 
 ## "LED" é difícil para o modelo em português
 

@@ -231,7 +231,40 @@ def _check_speech(config: AppConfig) -> list[Check]:
             Check(FAIL, "Modelo de fala", f"{model} nao encontrado",
                   "bash scripts/download_model.sh")
         )
+    checks.extend(_check_grammar(config))
     return checks
+
+
+def _check_grammar(config: AppConfig) -> list[Check]:
+    """Testa se o Vosk aceita a gramatica dos comandos.
+
+    Se recusar, todo comando passa a usar reconhecimento livre -- que erra
+    muito mais. O sintoma tipico e "o Vosk nao reconhece o comando X de jeito
+    nenhum", e a causa quase sempre e palavra sem acento no router.
+    """
+    if not config.speech.use_grammar:
+        return [Check(WARN, "Gramatica de comandos", "desativada em config.toml")]
+
+    if not _installed("vosk"):
+        return []
+
+    from .speech.vosk_engine import VoskEngine, resolve_model_dir
+
+    if resolve_model_dir(config.speech.model_path) is None:
+        return []
+
+    try:
+        engine = VoskEngine(config.speech.model_path, 16000).load()
+        from .commands.router import CommandRouter
+
+        vocabulario = CommandRouter().vocabulary()
+        engine.session(vocabulario)
+    except Exception as exc:  # noqa: BLE001
+        return [
+            Check(FAIL, "Gramatica de comandos", f"recusada pelo Vosk ({exc})",
+                  "Confira a acentuacao das frases em commands/router.py.")
+        ]
+    return [Check(OK, "Gramatica de comandos", f"{len(vocabulario)} frases aceitas")]
 
 
 def _check_distance(config: AppConfig) -> Check:

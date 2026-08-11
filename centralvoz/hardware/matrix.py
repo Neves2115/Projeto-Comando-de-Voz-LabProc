@@ -76,7 +76,94 @@ ICONS: dict[str, tuple[str, ...]] = {
         ".#.##.#.",
         "........",
     ),
+    # Rosto sorrindo.
+    "sorriso": (
+        "..####..",
+        ".#....#.",
+        "#.#..#.#",
+        "#......#",
+        "#.#..#.#",
+        "#..##..#",
+        ".#....#.",
+        "..####..",
+    ),
+    "triste": (
+        "..####..",
+        ".#....#.",
+        "#.#..#.#",
+        "#......#",
+        "#..##..#",
+        "#.#..#.#",
+        ".#....#.",
+        "..####..",
+    ),
+    "estrela": (
+        "...##...",
+        "...##...",
+        "########",
+        ".######.",
+        "..####..",
+        ".##..##.",
+        ".#....#.",
+        "........",
+    ),
+    "seta": (
+        "...##...",
+        "..####..",
+        ".######.",
+        "####.###",
+        "...##...",
+        "...##...",
+        "...##...",
+        "........",
+    ),
+    "gato": (
+        "##....##",
+        "###..###",
+        "########",
+        "#.####.#",
+        "########",
+        "#.#..#.#",
+        "##.##.##",
+        ".######.",
+    ),
+    "musica": (
+        "....###.",
+        "....#..#",
+        "....###.",
+        "....#...",
+        "....#...",
+        "..###...",
+        ".####...",
+        "..##....",
+    ),
 }
+
+#: Nomes alternativos aceitos na fala. "carinha feliz" -> icone sorriso.
+ICON_ALIASES: dict[str, str] = {
+    "sorrindo": "sorriso",
+    "feliz": "sorriso",
+    "sorridente": "sorriso",
+    "rosto": "sorriso",
+    "carinha": "sorriso",
+    "infeliz": "triste",
+    "chateado": "triste",
+    "nota": "musica",
+    "flecha": "seta",
+    "certo": "ok",
+    "coracaozinho": "coracao",
+}
+
+
+def resolve_icon(spoken: str) -> str | None:
+    """Encontra o icone citado numa frase ja normalizada (sem acento)."""
+    for nome in ICONS:
+        if nome in spoken:
+            return nome
+    for alias, nome in ICON_ALIASES.items():
+        if alias in spoken:
+            return nome
+    return None
 
 
 def pattern_to_rows(pattern: Iterable[str]) -> list[int]:

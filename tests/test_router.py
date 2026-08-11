@@ -124,3 +124,49 @@ def test_novos_comandos_roteiam(router: CommandRouter) -> None:
     assert router.route("modo festa").intent is Intent.PARTY_MODE
     assert router.route("desenhar coracao").intent is Intent.MATRIX_DRAW
     assert router.route("apagar recados").intent is Intent.NOTES_CLEAR
+
+
+# --------------------------------------------------------------------------- #
+# Acentuacao na gramatica
+# --------------------------------------------------------------------------- #
+
+
+def test_gramatica_preserva_acentos(router: CommandRouter) -> None:
+    """Regressao: a gramatica ia sem acento e o Vosk recusava tudo.
+
+    O lexico do modelo de portugues conhece "coração", nao "coracao". Uma
+    palavra fora do lexico faz o Vosk rejeitar a gramatica INTEIRA e cair no
+    reconhecimento livre, que erra muito mais nos comandos.
+    """
+    vocab = router.vocabulary()
+
+    assert "desenhar coração" in vocab
+    assert "mostrar distância" in vocab
+    assert "tocar música" in vocab
+    assert "que horas são" in vocab
+
+    # As versoes sem acento nao podem aparecer.
+    assert "desenhar coracao" not in vocab
+    assert "mostrar distancia" not in vocab
+
+
+def test_gramatica_tem_varias_frases_acentuadas(router: CommandRouter) -> None:
+    acentuadas = [
+        f for f in router.vocabulary() if any(c in f for c in "áàâãéêíóôõúç")
+    ]
+    assert len(acentuadas) >= 15
+
+
+@pytest.mark.parametrize("dito", ["desenhar coracao", "desenhar coração"])
+def test_casamento_ignora_acento(router: CommandRouter, dito: str) -> None:
+    """Escrever certo na gramatica nao pode atrapalhar o casamento."""
+    assert router.route(dito).intent is Intent.MATRIX_DRAW
+
+
+@pytest.mark.parametrize(
+    "dito",
+    ["desenhar coracao", "carinha feliz", "rosto triste", "desenhar estrela",
+     "mostrar casa", "desenhar gato", "desenhar seta"],
+)
+def test_pedidos_de_desenho(router: CommandRouter, dito: str) -> None:
+    assert router.route(dito).intent is Intent.MATRIX_DRAW
