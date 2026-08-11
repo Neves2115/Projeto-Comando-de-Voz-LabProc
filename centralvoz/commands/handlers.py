@@ -213,13 +213,22 @@ def _servo_sweep(ctx: Context) -> Reply:
 
 @handles(Intent.DISTANCE_READ)
 def _distance_read(ctx: Context) -> Reply:
-    value = ctx.hardware.distance.read_cm()
-    close = value <= ctx.config.behavior.distance_warning_cm
+    valor = ctx.hardware.distance.read_cm()
+    if valor is None:
+        return Reply(
+            "O sensor de distancia nao respondeu. Confira a fiacao do HC-SR04 "
+            "(VCC em 5 V, divisor de tensao no ECHO) -- veja docs/ligacoes.md.",
+            "Sensor mudo",
+            "veja a fiacao",
+            icon="erro",
+        )
+
+    perto = valor <= ctx.config.behavior.distance_warning_cm
     return Reply(
-        f"Distancia: {value:.1f} cm",
+        f"Distancia: {valor:.1f} cm",
         "Distancia",
-        f"{value:.1f} cm",
-        icon="alerta" if close else "ok",
+        f"{valor:.1f} cm",
+        icon="alerta" if perto else "ok",
         repeatable=True,
     )
 
@@ -244,10 +253,17 @@ def _distance_monitor(ctx: Context) -> Reply:
         menor = float("inf")
 
         while time.monotonic() < fim and not cancel.is_set():
+            leitura = hardware.distance.read_cm()
+            if leitura is None:
+                # Sensor mudo ou ausente: nao adianta insistir por 20 s.
+                hardware.leds.set_named("vermelho")
+                hardware.lcd.show_lines("Sensor mudo", "veja a fiacao")
+                logger.error("Monitoramento abortado: o sensor nao respondeu.")
+                return
+
             try:
-                valor = float(hardware.distance.read_cm())
+                valor = float(leitura)
             except (TypeError, ValueError):
-                # Sensor ausente (NullPeripheral) devolve None.
                 hardware.lcd.show_lines("Sem sensor", "de distancia")
                 return
 

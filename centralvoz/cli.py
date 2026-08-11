@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import signal
 import sys
 import time
@@ -420,9 +421,25 @@ def _cmd_run(config: AppConfig) -> int:
         controller = VoiceCommandController(config, hardware, storage)
         loop = VoiceLoop(config, controller, engine, microphone)
 
+        # Ctrl+C: a primeira vez pede parada limpa; a segunda mata na marra.
+        #
+        # Isso existe porque uma chamada de hardware travada (o caso classico e
+        # o HC-SR04 com o ECHO mudo) deixa a thread principal presa. O tratador
+        # roda, imprime "Encerrando...", retorna -- e a chamada continua
+        # bloqueada. Sem a saida forcada, o unico jeito de fechar era `kill`.
+        pedidos = {"n": 0}
+
         def _handle_signal(*_args: object) -> None:
-            print("\nEncerrando...")
-            loop.stop()
+            pedidos["n"] += 1
+            if pedidos["n"] == 1:
+                print("\nEncerrando... (Ctrl+C de novo para forcar)")
+                loop.stop()
+                return
+
+            print("\nSaida forcada.")
+            hardware.close()
+            # os._exit pula o atexit e o join de threads travadas em I/O.
+            os._exit(130)
 
         signal.signal(signal.SIGINT, _handle_signal)
         signal.signal(signal.SIGTERM, _handle_signal)

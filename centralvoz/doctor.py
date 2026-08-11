@@ -36,6 +36,7 @@ def run_checks(config: AppConfig) -> list[Check]:
     checks.extend(_check_i2c(config))
     checks.extend(_check_audio(config))
     checks.extend(_check_speech(config))
+    checks.append(_check_distance(config))
     checks.append(_check_storage(config))
     return checks
 
@@ -231,6 +232,42 @@ def _check_speech(config: AppConfig) -> list[Check]:
                   "bash scripts/download_model.sh")
         )
     return checks
+
+
+def _check_distance(config: AppConfig) -> Check:
+    """Faz uma leitura real com prazo. E o unico jeito de saber se o ECHO responde."""
+    info = inspect_platform()
+    if config.mock or not info.is_raspberry_pi or not info.has_pwm_backend:
+        return Check(WARN, "Sensor de distancia", "nao testado (sem hardware)")
+
+    try:
+        from .gpio_setup import import_gpiozero
+        from .hardware.distance import GpioDistanceSensor
+
+        gpiozero = import_gpiozero(config.pin_factory)
+        sensor = GpioDistanceSensor(
+            config.pins.distance_trigger, config.pins.distance_echo, gpiozero
+        )
+    except Exception as exc:  # noqa: BLE001
+        return Check(WARN, "Sensor de distancia", f"nao inicializou ({exc})")
+
+    try:
+        valor = sensor.read_cm(samples=1)
+    finally:
+        sensor.close()
+
+    if valor is None:
+        return Check(
+            FAIL,
+            "Sensor de distancia",
+            "nao respondeu no prazo",
+            "O ECHO nunca subiu. Confira:\n"
+            f"  TRIG no GPIO{config.pins.distance_trigger}, "
+            f"ECHO no GPIO{config.pins.distance_echo}\n"
+            "  VCC nos 5 V (pino 2 ou 4), GND comum\n"
+            "  divisor de tensao no ECHO (1k + 2k) -- veja docs/ligacoes.md",
+        )
+    return Check(OK, "Sensor de distancia", f"{valor:.1f} cm")
 
 
 def _check_storage(config: AppConfig) -> Check:

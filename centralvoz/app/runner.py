@@ -63,6 +63,10 @@ class VoiceLoop:
                 except KeyboardInterrupt:
                     break
 
+                # O stop() pode ter chegado enquanto esperavamos o gatilho.
+                if not self._running:
+                    break
+
                 text = self._capture(blocks)
                 # Descarta ativacoes que chegaram durante a captura: sem isso,
                 # ENTER apertado enquanto o sistema processa vira uma nova
@@ -102,7 +106,7 @@ class VoiceLoop:
         hardware.lcd.show_lines("Ouvindo...", "")
 
         try:
-            while hardware.trigger.is_active():
+            while hardware.trigger.is_active() and self._running:
                 if time.monotonic() - started > audio.max_utterance_s:
                     logger.info("Tempo maximo de fala atingido.")
                     break

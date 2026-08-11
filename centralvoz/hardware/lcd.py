@@ -9,16 +9,37 @@ Habilite o I2C antes de usar:
 
 Alem do driver, esta classe resolve um problema pratico: uma frase ditada nao
 cabe em 16x2. `show_text()` quebra o texto em paginas e passa sozinho.
+
+ARQUITETURA -- por que existe uma thread de escrita
+====================================================
+Escrever uma tela inteira custa ~32 caracteres x 4 transacoes I2C cada. Antes
+isso rodava na thread que chamava `show_lines()` -- ou seja, no loop principal
+-- segurando um lock durante todas as escritas.
+
+Se o barramento I2C engasga (contencao entre threads, clock stretching do
+PCF8574, um jumper mal encaixado), a escrita nao retorna. O lock nunca e
+liberado e QUALQUER `show_lines()` posterior, de qualquer thread, bloqueia para
+sempre. Na pratica: o display congelava em "Processando..." e a central inteira
+parava junto -- o travamento visto no monitoramento de distancia.
+
+Agora `show_lines()` e `show_text()` apenas publicam o quadro desejado e
+retornam na hora. Uma unica thread consome a fila e escreve no barramento. Se o
+I2C travar, quem trava e essa thread: o resto do programa segue vivo, o tempo de
+escrita e monitorado e o driver tenta reinicializar o display.
 """
 
 from __future__ import annotations
 
+import logging
+import queue
 import threading
 import time
 from typing import Sequence
 
 from ..utils import fit, paginate
 from .base import Peripheral
+
+logger = logging.getLogger(__name__)
 
 # --------------------------------------------------------------------------- #
 # Comandos do HD44780
@@ -43,9 +64,16 @@ BIT_BACKLIGHT = 0x08
 ROW_OFFSETS = (0x00, 0x40, 0x14, 0x54)
 COMMON_ADDRESSES = (0x27, 0x3F, 0x26, 0x3E, 0x20, 0x38)
 
+#: Acima disso, considera-se que o barramento engasgou.
+SLOW_WRITE_S = 1.5
+
 
 class LcdDisplay(Peripheral):
-    """Interface comum de display."""
+    """Interface comum de display.
+
+    Contrato importante: nenhum metodo publico bloqueia por I/O. O quadro e
+    publicado numa fila e escrito por outra thread.
+    """
 
     name = "lcd"
 
@@ -53,23 +81,32 @@ class LcdDisplay(Peripheral):
         self.cols = cols
         self.rows = rows
         self.page_delay_s = page_delay_s
+
         self._buffer = [" " * cols for _ in range(rows)]
+        self._buffer_lock = threading.Lock()  # protege so o buffer, nunca o I/O
+
+        # Fila de tamanho 1: quadro novo substitui o antigo ainda nao escrito.
+        # Nao adianta desenhar telas que ja estao desatualizadas.
+        self._frames: queue.Queue[list[str]] = queue.Queue(maxsize=1)
+        self._stop = threading.Event()
+        self._writer = threading.Thread(
+            target=self._writer_loop, name="lcd-writer", daemon=True
+        )
+        self._writer.start()
+
         self._pager: threading.Thread | None = None
         self._stop_pager = threading.Event()
-        self._lock = threading.RLock()
 
     # -- API publica -------------------------------------------------- #
 
     def clear(self) -> None:
         self._stop_paging()
-        with self._lock:
-            self._buffer = [" " * self.cols for _ in range(self.rows)]
-            self._render(self._buffer)
+        self._publish([" " * self.cols for _ in range(self.rows)])
 
     def show_lines(self, *lines: str) -> None:
         """Escreve linhas fixas, cortando no tamanho do display."""
         self._stop_paging()
-        self._write_page([fit(line, self.cols) for line in lines[: self.rows]])
+        self._publish([fit(line, self.cols) for line in lines[: self.rows]])
 
     def show_text(self, text: str, *, loop: bool = False) -> None:
         """Mostra texto de qualquer tamanho, paginando em segundo plano."""
@@ -77,12 +114,17 @@ class LcdDisplay(Peripheral):
         pages = paginate(text, self.cols, self.rows)
 
         if len(pages) == 1:
-            self._write_page(pages[0])
+            self._publish(pages[0])
             return
 
-        self._stop_pager.clear()
+        # Evento novo a cada paginacao: assim `_stop_paging` nunca precisa
+        # esperar a thread antiga terminar para liberar quem chamou.
+        self._stop_pager = threading.Event()
         self._pager = threading.Thread(
-            target=self._page_loop, args=(pages, loop), daemon=True
+            target=self._page_loop,
+            args=(pages, loop, self._stop_pager),
+            name="lcd-pager",
+            daemon=True,
         )
         self._pager.start()
 
@@ -92,41 +134,87 @@ class LcdDisplay(Peripheral):
 
     def render(self) -> list[str]:
         """Conteudo atual do display. Usado nos testes."""
-        with self._lock:
+        with self._buffer_lock:
             return list(self._buffer)
+
+    def flush(self, timeout: float = 2.0) -> bool:
+        """Espera o quadro pendente ser escrito. Usado nos testes e no selftest."""
+        limite = time.monotonic() + timeout
+        while time.monotonic() < limite:
+            if self._frames.empty():
+                return True
+            time.sleep(0.02)
+        return False
 
     # -- interno ------------------------------------------------------ #
 
-    def _page_loop(self, pages: Sequence[list[str]], loop: bool) -> None:
-        while not self._stop_pager.is_set():
+    def _publish(self, lines: Sequence[str]) -> None:
+        """Registra o quadro e acorda a thread de escrita. NUNCA bloqueia."""
+        page = [fit(line, self.cols) for line in lines]
+        page += [" " * self.cols] * (self.rows - len(page))
+
+        with self._buffer_lock:
+            self._buffer = page
+
+        # Descarta o quadro anterior ainda nao escrito: so o mais recente importa.
+        try:
+            self._frames.get_nowait()
+        except queue.Empty:
+            pass
+        try:
+            self._frames.put_nowait(page)
+        except queue.Full:  # pragma: no cover - corrida rara, quadro seguinte cobre
+            pass
+
+    def _writer_loop(self) -> None:
+        while not self._stop.is_set():
+            try:
+                page = self._frames.get(timeout=0.2)
+            except queue.Empty:
+                continue
+
+            inicio = time.monotonic()
+            try:
+                self._render(page)
+            except Exception as exc:  # noqa: BLE001 - I/O nunca derruba o programa
+                logger.warning("Falha ao escrever no LCD: %s", exc)
+                self._on_write_error(exc)
+
+            gasto = time.monotonic() - inicio
+            if gasto > SLOW_WRITE_S:
+                logger.warning(
+                    "Escrita no LCD levou %.1f s (barramento I2C engasgado?)", gasto
+                )
+
+    def _page_loop(
+        self, pages: Sequence[list[str]], loop: bool, stop: threading.Event
+    ) -> None:
+        while not stop.is_set():
             for page in pages:
-                if self._stop_pager.is_set():
+                if stop.is_set():
                     return
-                self._write_page(page)
-                if self._stop_pager.wait(self.page_delay_s):
+                self._publish(page)
+                if stop.wait(self.page_delay_s):
                     return
             if not loop:
                 return
 
     def _stop_paging(self) -> None:
+        """Sinaliza a paginacao para parar. Nao espera: ela e daemon."""
         self._stop_pager.set()
-        pager = self._pager
-        if pager is not None and pager is not threading.current_thread():
-            pager.join(timeout=1.0)
         self._pager = None
-
-    def _write_page(self, lines: Sequence[str]) -> None:
-        page = [fit(line, self.cols) for line in lines]
-        page += [" " * self.cols] * (self.rows - len(page))
-        with self._lock:
-            self._buffer = page
-            self._render(page)
 
     def _render(self, lines: Sequence[str]) -> None:  # pragma: no cover
         raise NotImplementedError
 
+    def _on_write_error(self, exc: Exception) -> None:
+        """Gancho para o driver real tentar se recuperar."""
+
     def close(self) -> None:
         self._stop_paging()
+        self._stop.set()
+        if self._writer.is_alive() and self._writer is not threading.current_thread():
+            self._writer.join(timeout=2.0)
 
 
 class MockLcd(LcdDisplay):
@@ -142,6 +230,9 @@ class I2cLcd(LcdDisplay):
     """LCD real via PCF8574."""
 
     simulated = False
+
+    #: Erros consecutivos antes de tentar reinicializar o display.
+    MAX_ERRORS = 3
 
     def __init__(
         self,
