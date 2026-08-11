@@ -16,6 +16,7 @@ from ..gpio_setup import GpioUnavailable, import_gpiozero
 from .base import NullPeripheral, Peripheral
 from .distance import DistanceSensor, GpioDistanceSensor, MockDistanceSensor
 from .lcd import I2cLcd, LcdDisplay, MockLcd
+from .buzzer import ActiveBuzzer, BuzzerPair, MockBuzzer, PassiveBuzzer
 from .rgb import GpioRgbLed, MockRgbLed, RgbLed
 from .matrix import LedMatrix, MockMatrix, ShiftRegisterMatrix
 from .servo import GpioServo, MockServo, ServoController
@@ -31,11 +32,15 @@ class HardwareSet:
     lcd: LcdDisplay
     distance: DistanceSensor
     matrix: LedMatrix
+    buzzers: BuzzerPair
     trigger: Trigger
     simulated: bool
 
     def all(self) -> list[Peripheral]:
-        return [self.leds, self.servo, self.lcd, self.distance, self.matrix, self.trigger]
+        return [
+            self.leds, self.servo, self.lcd, self.distance,
+            self.matrix, self.buzzers, self.trigger,
+        ]
 
     def summary(self) -> str:
         return " | ".join(item.describe() for item in self.all())
@@ -92,6 +97,7 @@ def _build_mock(config: AppConfig) -> HardwareSet:
         ),
         distance=MockDistanceSensor(pins.distance_trigger, pins.distance_echo),
         matrix=MockMatrix(),
+        buzzers=BuzzerPair(MockBuzzer(), MockBuzzer()),
         trigger=KeyboardTrigger(),
         simulated=True,
     )
@@ -146,6 +152,7 @@ def _build_minimal(config: AppConfig) -> HardwareSet:
         lcd=_build_lcd(config),
         distance=NullPeripheral("distancia", "nao usado no modo minimo"),  # type: ignore[arg-type]
         matrix=NullPeripheral("matriz", "nao usada no modo minimo"),     # type: ignore[arg-type]
+        buzzers=BuzzerPair(None, None),
         trigger=_build_trigger(config),
         simulated=False,
     )
@@ -187,6 +194,28 @@ def _build_real(config: AppConfig, gpiozero) -> HardwareSet:
 
     lcd = _build_lcd(config)
 
+    ativo = (
+        _safe(
+            "buzzer ativo",
+            lambda: ActiveBuzzer(
+                pins.buzzer_active, gpiozero, active_high=pins.buzzer_active_high
+            ),
+            fallback=MockBuzzer,
+        )
+        if config.buzzer.active_enabled
+        else None
+    )
+    passivo = (
+        _safe(
+            "buzzer passivo",
+            lambda: PassiveBuzzer(pins.buzzer_passive, gpiozero),
+            fallback=MockBuzzer,
+        )
+        if config.buzzer.passive_enabled
+        else None
+    )
+    buzzers = BuzzerPair(ativo, passivo)
+
     if config.matrix.enabled:
         matrix = _safe(
             "matriz",
@@ -208,6 +237,7 @@ def _build_real(config: AppConfig, gpiozero) -> HardwareSet:
         lcd=lcd,
         distance=distance,
         matrix=matrix,
+        buzzers=buzzers,
         trigger=trigger,
         simulated=False,
     )

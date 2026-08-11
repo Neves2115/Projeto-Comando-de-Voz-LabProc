@@ -19,6 +19,7 @@ from typing import Callable
 from ..tasks import BackgroundTask
 from ..config import AppConfig
 from ..hardware.factory import HardwareSet
+from ..hardware.buzzer import MELODIES
 from ..hardware.rgb import COLORS, RAINBOW
 from ..storage.db import Storage
 from ..utils import humanize_seconds, normalize_text
@@ -274,6 +275,8 @@ def _distance_monitor(ctx: Context) -> Reply:
                 hardware.leds.set_named("vermelho")
                 hardware.matrix.show_icon("alerta")
                 hardware.lcd.show_lines("ALERTA perto!", f"{valor:.1f} cm")
+                if ctx.config.buzzer.feedback_sounds:
+                    hardware.buzzers.play("alerta")
             else:
                 hardware.leds.set_named("verde")
                 hardware.matrix.show_icon("ok")
@@ -361,6 +364,76 @@ def _repeat_last(ctx: Context) -> Reply:
 
 
 # --------------------------------------------------------------------------- #
+# Buzzers
+# --------------------------------------------------------------------------- #
+
+
+def _sem_buzzer() -> Reply:
+    return Reply(
+        "Nenhum buzzer configurado. Ligue em config.toml: [buzzer] active_enabled = true",
+        "Sem buzzer", "veja o config", icon="alerta",
+    )
+
+
+@handles(Intent.BUZZER_BEEP)
+def _buzzer_beep(ctx: Context) -> Reply:
+    if not ctx.hardware.buzzers.available:
+        return _sem_buzzer()
+    vezes = max(1, min(10, ctx.number or 2))
+    ctx.hardware.buzzers.beep(times=vezes)
+    return Reply(f"{vezes} bipe(s)", "Bipe", f"{vezes}x", icon="ok")
+
+
+@handles(Intent.BUZZER_MELODY)
+def _buzzer_melody(ctx: Context) -> Reply:
+    """A melodia sai da propria fala: 'tocar parabens' -> melodia parabens."""
+    if not ctx.hardware.buzzers.available:
+        return _sem_buzzer()
+
+    dito = normalize_text(ctx.heard)
+    nome = next((m for m in MELODIES if m in dito), "escala")
+    ctx.hardware.buzzers.play(nome)
+    return Reply(f"Tocando: {nome}", "Tocando", nome, icon="coracao")
+
+
+@handles(Intent.BUZZER_ALARM)
+def _buzzer_alarm(ctx: Context) -> Reply:
+    """Alarme sonoro e visual ate mandarem parar."""
+    if not ctx.hardware.buzzers.available:
+        return _sem_buzzer()
+
+    hardware = ctx.hardware
+    duracao = ctx.config.behavior.party_duration_s
+
+    def tarefa(cancel) -> None:
+        fim = time.monotonic() + duracao
+        while time.monotonic() < fim and not cancel.is_set():
+            hardware.buzzers.play("alerta")
+            hardware.leds.set_named("vermelho")
+            hardware.matrix.show_icon("alerta")
+            if cancel.wait(0.35):
+                break
+            hardware.leds.off()
+            if cancel.wait(0.25):
+                break
+        hardware.buzzers.stop()
+        hardware.leds.off()
+        hardware.matrix.show_icon("ok")
+        hardware.lcd.show_lines("Alarme", "encerrado")
+
+    _start_task(ctx, "alarme", tarefa)
+    return Reply("Alarme ligado. Diga 'parar' ou 'silenciar'.",
+                 "! ALARME !", "diga parar", icon="alerta")
+
+
+@handles(Intent.BUZZER_SILENCE)
+def _buzzer_silence(ctx: Context) -> Reply:
+    _stop_task(ctx)
+    ctx.hardware.buzzers.stop()
+    return Reply("Silenciado.", "Silencio", "", icon="ok")
+
+
+# --------------------------------------------------------------------------- #
 # Sistema
 # --------------------------------------------------------------------------- #
 
@@ -413,6 +486,7 @@ def _party_mode(ctx: Context) -> Reply:
         fim_festa = time.monotonic() + duracao
         passo = 0
         angulo_aberto = True
+        hardware.buzzers.play("festa")
 
         while time.monotonic() < fim_festa and not cancel.is_set():
             hardware.leds.set_named(RAINBOW[passo % len(RAINBOW)])
@@ -429,6 +503,7 @@ def _party_mode(ctx: Context) -> Reply:
             if cancel.wait(0.25):
                 break
 
+        hardware.buzzers.stop()
         hardware.leds.off()
         hardware.servo.move_to(90.0)
         hardware.servo.release()
@@ -445,7 +520,17 @@ def _party_mode(ctx: Context) -> Reply:
 @handles(Intent.MATRIX_DRAW)
 def _matrix_draw(ctx: Context) -> Reply:
     """O desenho vem da propria fala: 'desenhar coracao' -> icone coracao."""
+    from ..hardware.base import NullPeripheral
     from ..hardware.matrix import ICONS
+
+    # Antes, com a matriz desativada, este comando dizia "Desenhando coracao"
+    # e nao acontecia nada -- o NullPeripheral engolia a chamada em silencio.
+    if isinstance(ctx.hardware.matrix, NullPeripheral):
+        return Reply(
+            "A matriz de LEDs esta desativada. Ligue em config.toml: "
+            "[matrix] enabled = true",
+            "Matriz off", "veja o config", icon="alerta",
+        )
 
     dito = normalize_text(ctx.heard)
     nome = next((icone for icone in ICONS if icone in dito), "ok")
@@ -456,6 +541,7 @@ def _matrix_draw(ctx: Context) -> Reply:
 @handles(Intent.CLEAR)
 def _clear(ctx: Context) -> Reply:
     _stop_task(ctx)
+    ctx.hardware.buzzers.stop()
     ctx.hardware.leds.off()
     ctx.hardware.matrix.clear()
     ctx.hardware.lcd.clear()
@@ -465,6 +551,8 @@ def _clear(ctx: Context) -> Reply:
 @handles(Intent.SHUTDOWN)
 def _shutdown(ctx: Context) -> Reply:
     _stop_task(ctx)
+    if ctx.config.buzzer.feedback_sounds:
+        ctx.hardware.buzzers.play("tchau")
     return Reply("Encerrando a central. Ate logo!", "Encerrando", "tchau", icon="ok", stop=True)
 
 

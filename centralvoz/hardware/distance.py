@@ -24,6 +24,7 @@ from __future__ import annotations
 import logging
 import random
 import threading
+import time
 from statistics import median
 
 from .base import Peripheral
@@ -69,11 +70,20 @@ class DistanceSensor(Peripheral):
         bate em quina ou superficie macia.
         """
         valores: list[float] = []
-        for _ in range(max(1, samples)):
+        for tentativa in range(max(1, samples)):
             valor = self._read_with_timeout()
-            if valor is None:
+            if valor is not None:
+                valores.append(valor)
+                continue
+
+            # Sensor mudo: nao adianta gastar o prazo das outras amostras.
+            # Sem isso, cada leitura custaria samples x READ_TIMEOUT_S -- e o
+            # laco de monitoramento ficaria 3 s parado a cada volta.
+            if not valores and tentativa == 0:
                 return None
-            valores.append(valor)
+
+        if not valores:
+            return None
         return round(median(valores), 1)
 
     def is_close(self, threshold_cm: float) -> bool:
@@ -148,28 +158,86 @@ class MockDistanceSensor(DistanceSensor):
 
 
 class GpioDistanceSensor(DistanceSensor):
+    """Driver proprio do HC-SR04, sem o `DistanceSensor` do gpiozero.
+
+    O componente pronto do gpiozero nos deu os dois piores comportamentos
+    possiveis, um de cada vez:
+
+    * com `partial=False` (padrao) ele BLOQUEIA ate a fila interna encher.
+      Com o ECHO mudo isso nunca acontece e a chamada nao retorna.
+    * com `partial=True` ele devolve a media do que ja esta na fila -- que no
+      inicio esta vazia. Resultado: **0.0 cm** silenciosamente, mesmo com o
+      sensor perfeito. Um valor errado e pior que um erro, porque parece que
+      funcionou.
+
+    Aqui a medicao e feita na mao e cada espera tem prazo proprio. Quando o eco
+    nao chega, levantamos excecao em vez de inventar um numero.
+    """
+
     simulated = False
+
+    #: Pulso de disparo exigido pelo HC-SR04.
+    TRIGGER_PULSE_S = 0.00001  # 10 us
+
+    #: Tempo maximo esperando o ECHO subir depois do disparo.
+    #: O sensor responde em ~0,5 ms; 60 ms e folga enorme.
+    ECHO_START_TIMEOUT_S = 0.06
+
+    #: Tempo maximo com o ECHO alto. 2 m ida e volta = ~11,7 ms.
+    ECHO_END_TIMEOUT_S = 0.06
+
+    #: Velocidade do som ao nivel do mar, em cm/s.
+    SPEED_OF_SOUND_CM_S = 34300.0
 
     def __init__(self, trigger_pin: int, echo_pin: int, gpiozero_module) -> None:
         super().__init__(trigger_pin, echo_pin)
-        self._device = gpiozero_module.DistanceSensor(
-            echo=echo_pin,
-            trigger=trigger_pin,
-            max_distance=MAX_DISTANCE_M,
-            # queue_len=1 + partial=True: sem isso a PRIMEIRA leitura bloqueia
-            # ate a fila interna encher com N medicoes. Com o ECHO mudo, isso
-            # nunca acontece e a chamada nao volta.
-            queue_len=1,
-            partial=True,
+        self._trigger = gpiozero_module.DigitalOutputDevice(
+            trigger_pin, initial_value=False
         )
-        self._log("trigger=%s echo=%s", trigger_pin, echo_pin)
+        self._echo = gpiozero_module.DigitalInputDevice(echo_pin)
+        # O datasheet pede um intervalo de acomodacao antes da primeira medida.
+        time.sleep(0.05)
+        self._log("trigger=%s echo=%s (driver proprio)", trigger_pin, echo_pin)
 
     def _read_once(self) -> float:
-        # gpiozero devolve metros.
-        return float(self._device.distance) * 100.0
+        # Disparo: 10 us em nivel alto.
+        self._trigger.off()
+        time.sleep(0.000002)
+        self._trigger.on()
+        time.sleep(self.TRIGGER_PULSE_S)
+        self._trigger.off()
+
+        inicio_espera = time.perf_counter()
+        while not self._echo.value:
+            if time.perf_counter() - inicio_espera > self.ECHO_START_TIMEOUT_S:
+                raise DistanceTimeout(
+                    "O ECHO nunca subiu depois do disparo. O sensor esta sem "
+                    "alimentacao de 5 V, com o ECHO desligado, ou os pinos "
+                    "TRIG/ECHO estao trocados."
+                )
+
+        subida = time.perf_counter()
+        while self._echo.value:
+            if time.perf_counter() - subida > self.ECHO_END_TIMEOUT_S:
+                raise DistanceTimeout(
+                    "O ECHO ficou alto tempo demais. Isso costuma ser o divisor "
+                    "de tensao mal montado (o pino nunca volta para nivel baixo)."
+                )
+
+        duracao = time.perf_counter() - subida
+        distancia = duracao * self.SPEED_OF_SOUND_CM_S / 2.0
+
+        # Fora da faixa util do sensor: leitura invalida, nao um objeto a 0 cm.
+        if distancia < 1.0 or distancia > MAX_DISTANCE_M * 100.0 + 20.0:
+            raise DistanceTimeout(
+                f"Leitura fora da faixa util ({distancia:.1f} cm). "
+                "O HC-SR04 mede de 2 cm a 4 m."
+            )
+        return distancia
 
     def close(self) -> None:
-        try:
-            self._device.close()
-        except Exception:  # noqa: BLE001
-            pass
+        for device in (self._trigger, self._echo):
+            try:
+                device.close()
+            except Exception:  # noqa: BLE001
+                pass

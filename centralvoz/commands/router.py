@@ -218,6 +218,17 @@ class CommandRouter:
         r(Intent.STOP_TASK, "parar", "pare", "cancelar", "chega", "parar tudo",
           help_text="parar (cancela o que esta rodando)")
 
+        # --- Buzzers -------------------------------------------------- #
+        r(Intent.BUZZER_BEEP, "apitar", "bipar", "dar um bipe", "buzina",
+          "tocar bipe", help_text="apitar")
+        r(Intent.BUZZER_MELODY, "tocar musica", "tocar melodia", "tocar escala",
+          "tocar parabens", "tocar uma musica", "cantar parabens",
+          help_text="tocar musica")
+        r(Intent.BUZZER_ALARM, "tocar alarme", "ligar alarme", "soar alarme",
+          "modo alarme", "sirene", help_text="tocar alarme")
+        r(Intent.BUZZER_SILENCE, "silenciar", "calar", "parar o som",
+          "parar musica", "sem som", help_text="silenciar")
+
         # --- Ditado e recados ----------------------------------------- #
         r(Intent.DICTATION_START, "transcrever", "modo ditado", "anotar recado",
           "escrever no display", "tomar nota",
@@ -276,6 +287,9 @@ class CommandRouter:
         r(Intent.HELP, "help", "list commands", **g)
         r(Intent.PARTY_MODE, "party mode", **g)
         r(Intent.SHUTDOWN, "shut down", "goodbye", **g)
+        r(Intent.BUZZER_BEEP, "beep", **g)
+        r(Intent.BUZZER_ALARM, "sound the alarm", **g)
+        r(Intent.BUZZER_SILENCE, "be quiet", "silence", **g)
 
 
 # --------------------------------------------------------------------------- #

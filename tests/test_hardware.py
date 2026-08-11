@@ -330,3 +330,120 @@ def test_taxas_preferem_multiplos_exatos_de_16k() -> None:
     assert CANDIDATE_RATES[0] == 16000
     assert CANDIDATE_RATES.index(48000) < CANDIDATE_RATES.index(44100)
     assert CANDIDATE_RATES.index(32000) < CANDIDATE_RATES.index(44100)
+
+
+# --------------------------------------------------------------------------- #
+# Sensor de distancia: timeout
+# --------------------------------------------------------------------------- #
+
+
+def test_leitura_com_sensor_mudo_devolve_none_rapido() -> None:
+    """Regressao: o gpiozero bloqueia para sempre quando o ECHO nao sobe.
+
+    Isso prendia a thread principal, congelava o LCD em 'Processando...' e
+    tornava o Ctrl+C inutil.
+    """
+    import time
+
+    from centralvoz.hardware.distance import MockDistanceSensor
+
+    sensor = MockDistanceSensor(23, 24)
+    sensor.simulate_timeout = True
+
+    inicio = time.monotonic()
+    valor = sensor.read_cm(samples=1)
+    decorrido = time.monotonic() - inicio
+
+    assert valor is None
+    assert decorrido < 3.0
+    assert sensor.faulty is True
+
+
+def test_leitura_normal_continua_funcionando() -> None:
+    from centralvoz.hardware.distance import MockDistanceSensor
+
+    sensor = MockDistanceSensor(23, 24, value_cm=30.0)
+    valor = sensor.read_cm()
+
+    assert valor is not None
+    assert 25.0 < valor < 35.0
+    assert sensor.faulty is False
+
+
+def test_is_close_com_sensor_mudo_e_falso() -> None:
+    from centralvoz.hardware.distance import MockDistanceSensor
+
+    sensor = MockDistanceSensor(23, 24)
+    sensor.simulate_timeout = True
+    assert sensor.is_close(20.0) is False
+
+
+# --------------------------------------------------------------------------- #
+# Buzzers
+# --------------------------------------------------------------------------- #
+
+
+def test_melodia_toca_frequencias_distintas() -> None:
+    from centralvoz.hardware.buzzer import MockBuzzer
+
+    buzzer = MockBuzzer()
+    buzzer.play("ok")
+    assert len(set(buzzer.history)) >= 2
+    assert all(f > 0 for f in buzzer.history)
+
+
+def test_pausa_nao_gera_tom() -> None:
+    from centralvoz.hardware.buzzer import MockBuzzer
+
+    buzzer = MockBuzzer()
+    buzzer.play((("do", 0.02), ("pausa", 0.02), ("mi", 0.02)))
+    assert 0.0 not in buzzer.history
+
+
+def test_stop_interrompe_melodia_longa() -> None:
+    import time
+
+    from centralvoz.hardware.buzzer import MockBuzzer
+
+    buzzer = MockBuzzer()
+    buzzer.play_async("parabens")
+    time.sleep(0.1)
+
+    inicio = time.monotonic()
+    buzzer.stop()
+    assert time.monotonic() - inicio < 2.0
+
+
+def test_par_prefere_o_passivo_para_melodias() -> None:
+    import time
+
+    from centralvoz.hardware.buzzer import BuzzerPair, MockBuzzer
+
+    ativo, passivo = MockBuzzer(), MockBuzzer()
+    par = BuzzerPair(ativo, passivo)
+
+    par.play("escala")
+    time.sleep(0.4)
+    par.stop()
+
+    assert passivo.history and not ativo.history
+
+
+def test_par_vazio_nao_quebra() -> None:
+    from centralvoz.hardware.buzzer import BuzzerPair
+
+    par = BuzzerPair(None, None)
+    assert par.available is False
+    par.beep()
+    par.play("ok")
+    par.stop()
+    par.close()
+
+
+def test_todas_as_melodias_usam_notas_validas() -> None:
+    from centralvoz.hardware.buzzer import MELODIES, NOTES
+
+    for nome, melodia in MELODIES.items():
+        for nota, duracao in melodia:
+            assert nota in NOTES, f"{nome}: nota desconhecida {nota!r}"
+            assert duracao > 0, f"{nome}: duracao invalida"

@@ -336,21 +336,21 @@ def _cmd_selftest(config: AppConfig) -> int:
     with build_hardware(config) as hardware:
         print(f"\nHardware: {hardware.summary()}\n")
 
-        print("1/5 LED RGB ...")
+        print("1/6 LED RGB ...")
         for cor in ("vermelho", "verde", "azul", "amarelo", "ciano", "magenta"):
             print(f"     {cor}")
             hardware.leds.set_named(cor)
             time.sleep(0.5)
         hardware.leds.off()
 
-        print("2/5 Servo ...")
+        print("2/6 Servo ...")
         hardware.servo.move_to(0)
         time.sleep(0.5)
         hardware.servo.move_to(90)
         time.sleep(0.5)
         hardware.servo.release()
 
-        print("3/5 LCD ...")
+        print("3/6 LCD ...")
         hardware.lcd.show_lines("Central de Voz", "autoteste ok")
         time.sleep(1.5)
         hardware.lcd.show_text(
@@ -358,16 +358,31 @@ def _cmd_selftest(config: AppConfig) -> int:
         )
         time.sleep(5)
 
-        print("4/5 Sensor de distancia ...")
+        print("4/6 Sensor de distancia ...")
         for _ in range(3):
-            print(f"     {hardware.distance.read_cm():.1f} cm")
+            valor = hardware.distance.read_cm()
+            if valor is None:
+                print("     sem resposta -- confira a fiacao (docs/ligacoes.md)")
+                break
+            print(f"     {valor:.1f} cm")
             time.sleep(0.4)
 
-        print("5/5 Matriz ...")
+        print("5/6 Matriz ...")
         for icon in ("ok", "alerta", "casa"):
             hardware.matrix.show_icon(icon)
             time.sleep(0.7)
         hardware.matrix.clear()
+
+        print("6/6 Buzzers ...")
+        if hardware.buzzers.available:
+            print("     ativo: bipes")
+            if hardware.buzzers.active is not None:
+                hardware.buzzers.active.beep(times=2)
+            print("     passivo: escala")
+            if hardware.buzzers.passive is not None:
+                hardware.buzzers.passive.play("escala")
+        else:
+            print("     nenhum buzzer configurado")
         hardware.lcd.clear()
 
     print("\nAutoteste concluido.\n")

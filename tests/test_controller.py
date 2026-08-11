@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 from centralvoz.app.controller import VoiceCommandController
@@ -239,3 +241,90 @@ def test_close_cancela_tudo(controller) -> None:
     controller.handle_text("monitorar distancia")
     controller.close()
     assert controller.task.running is False
+
+
+def test_sensor_mudo_nao_trava_o_comando(controller) -> None:
+    """Regressao: 'mostrar distancia' congelava a central inteira."""
+    import time
+
+    controller.hardware.distance.simulate_timeout = True
+
+    inicio = time.monotonic()
+    reply = controller.handle_text("mostrar distancia")
+    decorrido = time.monotonic() - inicio
+
+    assert decorrido < 3.0
+    texto = reply.message.lower()
+    assert "fiacao" in texto or "respondeu" in texto or "sensor" in texto
+    assert reply.icon == "erro"
+
+
+def test_monitor_desiste_quando_o_sensor_esta_mudo(controller) -> None:
+    controller.hardware.distance.simulate_timeout = True
+    controller.handle_text("monitorar distancia")
+
+    # A tarefa tem que morrer sozinha em vez de insistir por 20 s.
+    for _ in range(60):
+        if not controller.task.running:
+            break
+        time.sleep(0.1)
+
+    assert controller.task.running is False
+
+
+# --------------------------------------------------------------------------- #
+# Buzzers
+# --------------------------------------------------------------------------- #
+
+
+def test_apitar_toca_no_buzzer(controller) -> None:
+    reply = controller.handle_text("apitar")
+    time.sleep(0.5)
+    assert controller.hardware.buzzers.active.history
+    assert "bipe" in reply.message.lower()
+
+
+def test_melodia_vem_da_fala(controller) -> None:
+    reply = controller.handle_text("tocar parabens")
+    assert "parabens" in reply.message.lower()
+
+    time.sleep(0.5)
+    # O passivo e o unico que reproduz notas distintas.
+    assert len(set(controller.hardware.buzzers.passive.history)) > 1
+    controller.hardware.buzzers.stop()
+
+
+def test_alarme_roda_em_segundo_plano_e_para(controller) -> None:
+    reply = controller.handle_text("tocar alarme")
+    assert controller.task.running is True
+    assert "parar" in reply.message.lower()
+
+    controller.handle_text("silenciar")
+    assert controller.task.running is False
+
+
+def test_sem_buzzer_avisa(controller) -> None:
+    from centralvoz.hardware.buzzer import BuzzerPair
+
+    controller.hardware.buzzers = BuzzerPair(None, None)
+    reply = controller.handle_text("apitar")
+    assert "buzzer" in reply.message.lower()
+    assert reply.icon == "alerta"
+
+
+def test_matriz_desativada_avisa_em_vez_de_mentir(controller) -> None:
+    """Regressao: dizia 'Desenhando coracao' sem nada acontecer."""
+    from centralvoz.hardware.base import NullPeripheral
+
+    controller.hardware.matrix = NullPeripheral("matriz", "desativada")
+    reply = controller.handle_text("desenhar coracao")
+
+    assert "matriz" in reply.message.lower()
+    assert "config" in reply.message.lower()
+    assert reply.icon == "alerta"
+
+
+def test_desenho_funciona_com_matriz_ativa(controller) -> None:
+    controller.handle_text("desenhar coracao")
+    linhas = controller.hardware.matrix.render()
+    assert any("#" in linha for linha in linhas)

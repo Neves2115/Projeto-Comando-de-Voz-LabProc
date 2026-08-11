@@ -27,6 +27,12 @@ class PinConfig:
     rgb_active_high: bool = False
     servo: int = 18  # GPIO18 = pino de PWM por hardware, o melhor para servo
     button: int = 26  # botao push-to-talk, ligado entre o GPIO e o GND
+    # Buzzers do kit. O ativo so liga/desliga; o passivo toca notas (precisa PWM).
+    buzzer_active: int = 17
+    buzzer_passive: int = 27
+    #: Alguns modulos de buzzer ativo acionam em nivel BAIXO.
+    buzzer_active_high: bool = True
+
     distance_trigger: int = 23
     distance_echo: int = 24  # ATENCAO: use divisor de tensao, o echo do HC-SR04 e 5V
     # Matriz 8x8 com dois 74HC595 encadeados (opcional).
@@ -50,10 +56,16 @@ class LcdConfig:
 
 @dataclass
 class MatrixConfig:
-    # Desligado por padrao: a fiacao dos 74HC595 varia entre versoes do kit.
-    # Ligue depois de conferir os pinos em docs/ligacoes.md.
-    enabled: bool = False
+    enabled: bool = True
     refresh_hz: float = 160.0
+
+
+@dataclass
+class BuzzerConfig:
+    active_enabled: bool = True
+    passive_enabled: bool = True
+    #: Som ao confirmar comando, ao errar e ao alertar.
+    feedback_sounds: bool = True
 
 
 @dataclass
@@ -106,6 +118,7 @@ class AppConfig:
     pins: PinConfig = field(default_factory=PinConfig)
     lcd: LcdConfig = field(default_factory=LcdConfig)
     matrix: MatrixConfig = field(default_factory=MatrixConfig)
+    buzzer: BuzzerConfig = field(default_factory=BuzzerConfig)
     audio: AudioConfig = field(default_factory=AudioConfig)
     speech: SpeechConfig = field(default_factory=SpeechConfig)
     behavior: BehaviorConfig = field(default_factory=BehaviorConfig)

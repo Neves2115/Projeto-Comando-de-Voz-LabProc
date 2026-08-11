@@ -98,6 +98,10 @@ qualquer problema de PWM.
 | desenhar coração / casa / alerta | ícone na matriz |
 | modo festa | LED, servo e matriz juntos por 12 s (bom para demo) |
 | apagar recados | limpa as anotações |
+| apitar / bipar | bipes no buzzer ativo |
+| tocar música / escala / parabéns | melodia no buzzer passivo |
+| tocar alarme / sirene | alarme sonoro e visual até mandar parar |
+| silenciar / calar | corta o som |
 | desligar sistema | encerra o programa |
 
 O reconhecimento é **tolerante**: "ligar lede", "liga a luz" e "abre o servo"
@@ -120,6 +124,8 @@ Pinagem padrão (numeração BCM), toda configurável em `config.toml`:
 | Botão push-to-talk | GPIO26 → GND (pull-up interno) |
 | HC-SR04 | TRIG GPIO23, ECHO GPIO24 **com divisor de tensão** |
 | LCD 1602 I2C | SDA GPIO2, SCL GPIO3, VCC 5 V, GND |
+| Buzzer ativo | GPIO17 |
+| Buzzer passivo | GPIO27 (PWM para tocar notas) |
 | Matriz 8x8 (74HC595) | DS GPIO16, SHCP GPIO20, STCP GPIO21 |
 
 ⚠️ O ECHO do HC-SR04 entrega 5 V e o GPIO só aceita 3,3 V. Use divisor
@@ -240,6 +246,34 @@ responder no I2C, só ele cai para simulado e o resto continua funcionando.
 
 
 ---
+
+## A matriz não desenha nada?
+
+Ela agora vem **habilitada** por padrão (`[matrix] enabled = true`). Se estiver
+desligada, `desenhar coração` avisa em vez de dizer que desenhou — antes o
+comando mentia, porque a chamada era engolida em silêncio.
+
+Confira os pinos em [`docs/ligacoes.md`](docs/ligacoes.md): DS=GPIO16,
+SHCP=GPIO20, STCP=GPIO21. Eles mudaram na v0.3.0 porque colidiam com o LED RGB.
+
+## O sensor de distância não responde?
+
+```bash
+voz doctor
+```
+
+Ele faz uma leitura real com prazo. Se acusar "não respondeu no prazo", o ECHO
+nunca subiu — confira, nesta ordem: VCC do HC-SR04 nos **5 V** (não 3,3 V), GND
+comum com o Pi, TRIG/ECHO não trocados, e o **divisor de tensão** no ECHO.
+
+Nenhuma leitura bloqueia mais que 1 segundo. Antes, um ECHO mudo prendia a
+thread principal e nem Ctrl+C encerrava o programa.
+
+**Se aparecer sempre 0.0 cm**, atualize: até a v0.3.1 o projeto usava o
+`DistanceSensor` do gpiozero com `partial=True`, que devolve a média de uma fila
+vazia — ou seja, zero — mesmo com o sensor perfeito. Agora o HC-SR04 é lido
+diretamente, com prazo próprio em cada etapa, e uma leitura inválida vira erro
+explícito em vez de um número inventado.
 
 ## Comandos longos rodam em segundo plano
 

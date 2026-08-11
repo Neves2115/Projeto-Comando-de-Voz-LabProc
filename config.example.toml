@@ -29,6 +29,11 @@ rgb_active_high = false
 
 servo = 18                # GPIO18 = PWM por hardware
 button = 26               # botao push-to-talk: GPIO26 -> GND
+# Buzzers do kit Freenove.
+buzzer_active = 17        # so liga/desliga (tem oscilador proprio)
+buzzer_passive = 27       # toca notas (precisa de PWM)
+buzzer_active_high = true # false se o seu modulo aciona em nivel baixo
+
 distance_trigger = 23
 distance_echo = 24        # use divisor de tensao! o HC-SR04 devolve 5V
 
@@ -46,8 +51,13 @@ rows = 2
 page_delay_s = 2.2        # tempo de cada pagina quando o texto nao cabe
 
 [matrix]
-enabled = false           # ligue depois de conferir a fiacao dos 74HC595
+enabled = true            # desligue se nao tiver a matriz ligada
 refresh_hz = 160.0
+
+[buzzer]
+active_enabled = true
+passive_enabled = true
+feedback_sounds = true    # bipe no alerta de distancia e ao encerrar
 
 [audio]
 # O projeto negocia a taxa com o microfone. 16000 e so a preferencia inicial:

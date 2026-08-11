@@ -29,6 +29,11 @@ class Intent(str, Enum):
     NOTES_CLEAR = "notes_clear"
     REPEAT_LAST = "repeat_last"
 
+    BUZZER_BEEP = "buzzer_beep"
+    BUZZER_MELODY = "buzzer_melody"
+    BUZZER_ALARM = "buzzer_alarm"
+    BUZZER_SILENCE = "buzzer_silence"
+
     CLOCK = "clock"
     SYSTEM_STATUS = "system_status"
     HELP = "help"

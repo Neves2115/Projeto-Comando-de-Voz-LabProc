@@ -84,6 +84,75 @@ contagem regressiva no LCD.
 - `hardware/led.py` virou código morto após a migração para RGB. Removido.
 - 26 `# noqa` obsoletos removidos.
 
+### 9. `mostrar distância` congelava a central (crítico)
+
+Diagnóstico correto só na terceira tentativa. Os sintomas eram: log mostrava
+`distance_read (confianca 0.85)`, LCD parava em "Processando..." para sempre, e
+Ctrl+C imprimia "Encerrando..." sem nunca sair.
+
+A pista decisiva foi o log aparecer: ele é escrito **antes** do handler rodar.
+Logo o travamento estava dentro de `read_cm()`.
+
+`DistanceSensor` do gpiozero mede o intervalo entre o pulso no TRIGGER e a borda
+de subida no ECHO. Se o ECHO nunca sobe — fio solto, divisor de tensão mal
+montado, sensor sem 5 V, pinos trocados — a chamada não retorna. Pior: com
+`queue_len=5` e `partial=False`, a **primeira** leitura já espera a fila interna
+encher, o que nunca acontece.
+
+Com a thread principal presa, o `SIGINT` roda, imprime, retorna — e a chamada
+bloqueada continua bloqueada. Daí o "Encerrando..." eterno.
+
+**Correção em quatro camadas:**
+
+1. Toda leitura roda em thread daemon com prazo de 1 s (`READ_TIMEOUT_S`);
+   estourou, devolve `None`.
+2. `queue_len=1, partial=True` no gpiozero, para a primeira leitura não esperar
+   fila.
+3. Handlers tratam `None` com diagnóstico de fiação em vez de formatar e
+   quebrar; o monitoramento desiste em vez de insistir por 20 s.
+4. Segundo Ctrl+C força saída com `os._exit(130)`, pulando joins de threads
+   travadas em I/O.
+
+Além disso, `voz doctor` agora faz uma leitura real com prazo e diz exatamente o
+que conferir na fiação.
+
+### 10. LCD podia bloquear o loop principal
+
+Encontrado na mesma investigação. `_render()` fazia ~32 caracteres × 4
+transações I2C **na thread que chamou**, segurando um lock. Um barramento
+engasgado travaria toda `show_lines()` seguinte, de qualquer thread.
+
+Não era a causa deste travamento, mas era um segundo caminho para o mesmo
+sintoma. `show_lines()` e `show_text()` agora só publicam o quadro numa fila de
+tamanho 1 (quadro novo descarta o antigo não escrito) e retornam na hora; uma
+thread dedicada escreve. Escritas lentas viram aviso no log e o driver tenta
+reinicializar o display após três erros seguidos.
+
+### 11. Distância sempre 0.0 cm
+
+Correção incompleta da nº 9. Ao trocar `partial=False` por `partial=True` para
+evitar o travamento, o gpiozero passou a devolver a **média da fila interna** —
+que começa vazia. Resultado: `0.0 cm` silencioso, mesmo com o sensor perfeito.
+
+Trocar um travamento por um número inventado é pior: o travamento pelo menos
+avisa que algo está errado.
+
+**Correção:** driver próprio do HC-SR04 (`GpioDistanceSensor`), com pulso de
+10 µs no TRIGGER e duas esperas com prazo separado — uma para o ECHO subir
+(60 ms), outra para ele descer (60 ms). Leitura fora da faixa de 2 cm–4 m vira
+`DistanceTimeout` com diagnóstico, nunca um valor. E o `read_cm` desiste na
+primeira amostra falha, em vez de gastar `samples × timeout`.
+
+### 12. `desenhar coração` mentia com a matriz desligada
+
+A matriz vinha `enabled = false` por padrão, e nesse caso `hardware.matrix` era
+um `NullPeripheral` — que engole qualquer chamada em silêncio. O comando
+respondia "Desenhando coração" e nada acontecia.
+
+**Correção:** matriz habilitada por padrão (pinos 16/20/21, documentados), e o
+handler detecta `NullPeripheral` e avisa que ela está desativada em vez de
+afirmar que desenhou.
+
 ## Verificações que ficaram no CI
 
 | Teste | O que previne |
@@ -98,6 +167,12 @@ contagem regressiva no LCD.
 | `test_mono_faz_media_dos_canais` | canal mudo em adaptador USB |
 | `test_desempate_prefere_a_frase_mais_especifica` | parâmetro perdido para regra curta |
 | `test_aceita_modelo_com_layout_compilado` | rejeição de modelo Vosk válido |
+| `test_leitura_com_sensor_mudo_devolve_none_rapido` | volta do congelamento no HC-SR04 |
+| `test_sensor_mudo_nao_trava_o_comando` | handler travando a central |
+| `test_monitor_desiste_quando_o_sensor_esta_mudo` | tarefa insistindo em sensor morto |
+| `test_matriz_desativada_avisa_em_vez_de_mentir` | comando que finge ter funcionado |
+| `test_todas_as_melodias_usam_notas_validas` | melodia com nota inexistente |
+| `test_par_prefere_o_passivo_para_melodias` | melodia indo para o buzzer errado |
 
 ## O que revisei e está correto
 
