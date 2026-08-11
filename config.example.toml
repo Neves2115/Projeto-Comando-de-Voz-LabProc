@@ -34,8 +34,8 @@ buzzer_active = 17        # so liga/desliga (tem oscilador proprio)
 buzzer_passive = 27       # toca notas (precisa de PWM)
 buzzer_active_high = true # false se o seu modulo aciona em nivel baixo
 
-distance_trigger = 23
-distance_echo = 24        # use divisor de tensao! o HC-SR04 devolve 5V
+distance_trigger = 14
+distance_echo = 15       # use divisor de tensao! o HC-SR04 devolve 5V
 
 # Matriz 8x8 (74HC595). NAO pode colidir com os pinos do LED RGB acima.
 matrix_data = 16

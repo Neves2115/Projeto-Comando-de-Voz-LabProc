@@ -41,7 +41,7 @@ FIACAO_HINT = (
     "O sensor nao respondeu. Verifique:\n"
     "  - VCC do HC-SR04 nos 5 V (pino 2 ou 4), nao nos 3,3 V\n"
     "  - GND comum com o Pi\n"
-    "  - TRIG no GPIO23 e ECHO no GPIO24 (conferir se nao estao trocados)\n"
+    "  - TRIG no GPIO14 e ECHO no GPIO15 (conferir se nao estao trocados)\n"
     "  - divisor de tensao no ECHO (1k + 2k): sem ele o pino nao le direito\n"
     "Teste isolado:  voz say 'mostrar distancia' -v"
 )

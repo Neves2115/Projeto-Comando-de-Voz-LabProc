@@ -33,8 +33,8 @@ class PinConfig:
     #: Alguns modulos de buzzer ativo acionam em nivel BAIXO.
     buzzer_active_high: bool = True
 
-    distance_trigger: int = 23
-    distance_echo: int = 24  # ATENCAO: use divisor de tensao, o echo do HC-SR04 e 5V
+    distance_trigger: int = 14
+    distance_echo: int = 15  # ATENCAO: use divisor de tensao, o echo do HC-SR04 e 5V
     # Matriz 8x8 com dois 74HC595 encadeados (opcional).
     # ATENCAO: em conflito com os pinos do LED RGB acima. Se for usar a matriz,
     # mova-a para outros pinos livres (ex.: 16, 20, 21).
