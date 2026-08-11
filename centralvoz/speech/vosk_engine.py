@@ -34,8 +34,14 @@ ou manualmente:
 """
 
 
-#: Subpastas que todo modelo Vosk tem. Servem para validar a extracao.
-MODEL_MARKERS = ("am", "conf", "graph")
+# Os modelos Vosk vem em dois layouts diferentes, e ambos sao validos:
+#
+# 1. "classico" (modelos grandes):      am/  conf/  graph/  ivector/
+# 2. "compilado" (modelos small, como   final.mdl  HCLr.fst  Gr.fst  mfcc.conf
+#    o vosk-model-small-pt-0.3):        phones.txt  ivector/
+#
+# O segundo tem tudo na raiz, sem subpasta nenhuma. Validar so pelo primeiro
+# fazia o projeto rejeitar um modelo perfeitamente bom.
 
 
 class SpeechUnavailable(RuntimeError):
@@ -43,12 +49,23 @@ class SpeechUnavailable(RuntimeError):
 
 
 def looks_like_model(path: Path) -> bool:
-    """True se a pasta tem a cara de um modelo Vosk extraido."""
+    """True se a pasta tem a cara de um modelo Vosk extraido (qualquer layout)."""
     if not path.is_dir():
         return False
-    presentes = sum(1 for marker in MODEL_MARKERS if (path / marker).is_dir())
-    # Modelos pequenos as vezes trazem `am` como arquivo unico ou omitem `graph`.
-    return presentes >= 2 or (path / "am" / "final.mdl").is_file()
+
+    # Layout classico: subpastas am/ e conf/.
+    if (path / "am").is_dir() and (path / "conf").is_dir():
+        return True
+    if (path / "am" / "final.mdl").is_file():
+        return True
+
+    # Layout compilado: o modelo acustico e o grafo ficam na raiz.
+    if (path / "final.mdl").is_file() and (
+        (path / "HCLr.fst").is_file() or (path / "graph").is_dir()
+    ):
+        return True
+
+    return False
 
 
 def resolve_model_dir(path: Path) -> Path | None:
