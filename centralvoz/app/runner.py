@@ -44,6 +44,13 @@ class VoiceLoop:
         self._running = False
         self._last_activity = time.monotonic()
 
+        # Ganchos opcionais para quem quiser acompanhar o reconhecimento --
+        # a interface Jarvis, por exemplo. Ficam vazios no modo texto.
+        #   on_status(nome)          "ouvindo" | "processando"
+        #   on_partial(texto)        melhor palpite ate agora, texto completo
+        self.on_status = None
+        self.on_partial = None
+
     def run(self) -> None:
         hardware = self.controller.hardware
         trigger = hardware.trigger
@@ -104,6 +111,7 @@ class VoiceLoop:
         hardware.leds.on()
         hardware.matrix.show_icon("ouvindo")
         hardware.lcd.show_lines("Ouvindo...", "")
+        self._notify_status("ouvindo")
 
         try:
             while hardware.trigger.is_active() and self._running:
@@ -123,7 +131,10 @@ class VoiceLoop:
                     last_partial = now
                     partial = session.partial()
                     if partial:
+                        # O LCD so tem 16 colunas, mas o gancho recebe o texto
+                        # inteiro: a interface tem espaco para mostrar tudo.
                         hardware.lcd.show_lines("Ouvindo...", partial[-16:])
+                        self._notify_partial(partial)
         finally:
             hardware.leds.off()
 
@@ -137,9 +148,24 @@ class VoiceLoop:
             logger.debug("Audio salvo em %s", path)
 
         hardware.lcd.show_lines("Processando...", "")
+        self._notify_status("processando")
         text = session.finish()
         logger.debug("Transcricao (%.1f s): %r", elapsed, text)
         return text
+
+    def _notify_status(self, nome: str) -> None:
+        if self.on_status is not None:
+            try:
+                self.on_status(nome)
+            except Exception:  # noqa: BLE001 - a interface nao derruba o loop
+                logger.debug("on_status falhou", exc_info=True)
+
+    def _notify_partial(self, texto: str) -> None:
+        if self.on_partial is not None:
+            try:
+                self.on_partial(texto)
+            except Exception:  # noqa: BLE001
+                logger.debug("on_partial falhou", exc_info=True)
 
     def _maybe_leave_dictation(self) -> None:
         """Sai do ditado sozinho depois de um tempo sem falar."""

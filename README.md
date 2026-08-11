@@ -266,29 +266,43 @@ disponíveis, explica cada um e acompanha a execução ao vivo.
 
 ```
 ════════════════════════════════════════════════════════════════
-   J A R V I S   central de comandos por voz      [ PRONTO ]  14:32:05
+   J A R V I S   central de comandos por voz      [ OUVINDO ]  14:32:05
 ════════════════════════════════════════════════════════════════
  COMANDOS          │  LUZ RGB
-                   │
  ▸ Luz RGB         │  LED RGB de ânodo comum. Aceita 15 cores,
    Servo           │  incluindo misturas como amarelo e turquesa.
-   Distância       │
-   Som             │    "ligar luz"
-   Desenhos        │    "acender <cor>"
-   Ditado          │      também: acender cor / ligar cor / luz cor
-   Sistema         │    "trocar de cor"
-══ ATIVIDADE ═══════════════════════════════════════════════════
-  14:31:58  "acender azul" → Luz azul
+   Distância       │    "ligar luz"
+   Som             │    "acender <cor>"
+   Desenhos        │      também: acender cor / ligar cor / luz cor
+   Ditado          │    "trocar de cor"
+   Sistema         │    "brilho N por cento"
+══ RECONHECIMENTO ══════════════════════════════════════════════
+  ♪ acender a luz azu
+  → led_color                              ███████████░  0.94
+══ ATIVIDADE ══ MOTOR DE VOZ ═══════════════════════════════════
+  14:31:58  "acender a luz azul" → Luz azul
   14:32:03  "monitorar distância" → Monitorando por 20 s
+  14:32:09  sensor não respondeu — confira a fiação
 ════════════════════════════════════════════════════════════════
-  ENTER falar   ↑↓ navegar   TAB seção   / buscar   q sair
+  ENTER falar   ↑↓ navegar   TAB seção   m motor   / buscar   q sair
 ```
+
+O painel **RECONHECIMENTO** acompanha a fala em tempo real: o parcial do Vosk
+aparece enquanto você fala, e ao soltar mostra a intenção reconhecida com uma
+barra de confiança (verde acima de 0,85, amarelo acima de 0,70, vermelho abaixo
+disso — que é quando o comando é descartado).
+
+A tecla **`m`** troca o painel inferior para **MOTOR DE VOZ**, com a saída crua
+do Vosk: carregamento do modelo, compilação da gramática, palavras fora do
+léxico e a taxa de reamostragem. É ali que se descobre por que um comando não
+está sendo reconhecido.
 
 | Tecla | O que faz |
 |---|---|
 | `ENTER` | começa e termina a fala (push-to-talk) |
 | `↑` `↓` | navega; `j`/`k` também funcionam |
 | `TAB` | alterna entre a lista de grupos e a de comandos |
+| `m` | alterna entre ATIVIDADE e MOTOR DE VOZ |
 | `/` | busca um comando pelo nome |
 | `q` | sai |
 
@@ -296,8 +310,11 @@ O botão físico do GPIO26 continua funcionando junto com o ENTER. Se o terminal
 não suportar (`TERM` vazio, saída redirecionada), o Jarvis cai sozinho para o
 modo texto — ou force com `--plain`.
 
-Avisos e erros aparecem no painel ATIVIDADE em vez de sujarem a tela. O log
-completo continua em `logs/centralvoz.log`.
+Nada escapa para o terminal. O Vosk e o ALSA escrevem no stderr do sistema,
+fora do alcance do `logging` do Python — se isso chegasse ao terminal, cairia
+por cima do desenho e a interface "quebraria". O Jarvis captura esse stderr num
+pipe e exibe o conteúdo na aba MOTOR DE VOZ; `print()` de qualquer thread vai
+para ATIVIDADE. O log completo continua em `logs/centralvoz.log`.
 
 ## O sensor de distância não responde?
 

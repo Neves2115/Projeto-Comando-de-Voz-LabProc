@@ -116,6 +116,8 @@ class UiState:
     task: str = ""
     hardware: str = ""
     events: deque = field(default_factory=lambda: deque(maxlen=200))
+    #: Linhas cruas vindas do Vosk/ALSA (stderr nativo capturado).
+    engine_lines: deque = field(default_factory=lambda: deque(maxlen=100))
     lock: threading.Lock = field(default_factory=threading.Lock)
 
     def set_status(self, status: str) -> None:
@@ -125,6 +127,21 @@ class UiState:
     def log(self, texto: str, tipo: str = "info") -> None:
         with self.lock:
             self.events.append((datetime.now(), texto, tipo))
+
+    def log_engine(self, texto: str) -> None:
+        """Linha crua do Vosk ou do ALSA, capturada do stderr nativo."""
+        with self.lock:
+            self.engine_lines.append((datetime.now(), texto))
+
+    def set_recognition(self, heard: str, intent: str, score: float) -> None:
+        with self.lock:
+            self.last_heard = heard
+            self.last_intent = intent
+            self.last_score = score
+
+    def set_partial(self, texto: str) -> None:
+        with self.lock:
+            self.partial = texto
 
     def snapshot(self) -> dict:
         with self.lock:
@@ -138,6 +155,7 @@ class UiState:
                 "task": self.task,
                 "hardware": self.hardware,
                 "events": list(self.events),
+                "engine_lines": list(self.engine_lines),
             }
 
 
@@ -199,6 +217,11 @@ class JarvisUi:
         self.foco = "grupos"  # "grupos" ou "comandos"
         self.busca = ""
         self.modo_busca = False
+        #: Pede um redesenho completo no proximo quadro.
+        self.redesenhar = False
+        self._quadros = 0
+        #: Aba do painel inferior: "eventos" ou "motor".
+        self.aba = "eventos"
 
     # -- dados ---------------------------------------------------------- #
 
@@ -227,6 +250,18 @@ class JarvisUi:
     # -- desenho -------------------------------------------------------- #
 
     def draw(self, tela) -> None:
+        # Redesenho completo periodico. Se algo escapou para o terminal por
+        # baixo do curses (uma biblioteca em C, um print de outra thread), o
+        # curses nao sabe que a tela mudou e continua fazendo atualizacoes
+        # parciais sobre lixo. Repintar tudo de vez em quando conserta sozinho.
+        self._quadros += 1
+        if self.redesenhar or self._quadros % 100 == 0:
+            self.redesenhar = False
+            try:
+                tela.redrawwin()
+            except curses.error:
+                pass
+
         tela.erase()
         altura, largura = tela.getmaxyx()
         if altura < 14 or largura < 60:
@@ -238,14 +273,18 @@ class JarvisUi:
         self._header(tela, largura, dados)
 
         topo = 4
-        rodape = 3
-        atividade = max(5, altura // 4)
-        corpo = altura - topo - rodape - atividade
+        rodape = 1
+        reconhecimento = 4
+        atividade = max(5, (altura - topo - rodape - reconhecimento) // 3)
+        corpo = altura - topo - rodape - atividade - reconhecimento
 
         meio = max(22, largura // 3)
         self._painel_comandos(tela, topo, 0, corpo, meio)
         self._painel_detalhe(tela, topo, meio, corpo, largura - meio, dados)
-        self._painel_atividade(tela, topo + corpo, largura, atividade, dados)
+        self._painel_reconhecimento(tela, topo + corpo, largura, reconhecimento, dados)
+        self._painel_atividade(
+            tela, topo + corpo + reconhecimento, largura, atividade, dados
+        )
         self._rodape(tela, altura - 1, largura)
 
         tela.refresh()
@@ -328,18 +367,79 @@ class JarvisUi:
                     _put(tela, linha, x + 6, pedaco, curses.color_pair(C_DIM) | curses.A_DIM)
                     linha += 1
 
+    def _painel_reconhecimento(self, tela, y: int, largura: int, altura: int, dados: dict) -> None:
+        """O que o Vosk esta ouvindo agora e o que entendeu da ultima vez."""
+        _put(tela, y, 0, "═" * largura, curses.color_pair(C_BAR))
+        _put(tela, y, 2, " RECONHECIMENTO ", curses.color_pair(C_ACCENT) | curses.A_BOLD)
+
+        status = dados["status"]
+        parcial = dados["partial"]
+
+        # Linha 1: o que esta sendo ouvido em tempo real.
+        if status == "ouvindo":
+            texto = parcial or "(fale agora)"
+            _put(tela, y + 1, 2, "♪ ", curses.color_pair(C_OK) | curses.A_BOLD)
+            _put(tela, y + 1, 4, texto[: largura - 6],
+                 curses.color_pair(C_OK) | curses.A_BOLD)
+        elif status == "processando":
+            _put(tela, y + 1, 2, "… processando o áudio",
+                 curses.color_pair(C_WARN) | curses.A_BOLD)
+        elif dados["last_heard"]:
+            _put(tela, y + 1, 2, f'"{dados["last_heard"]}"'[: largura - 4],
+                 curses.color_pair(C_TITLE) | curses.A_BOLD)
+        else:
+            _put(tela, y + 1, 2, "aguardando — ENTER para falar",
+                 curses.color_pair(C_DIM) | curses.A_DIM)
+
+        # Linha 2: intencao reconhecida e barra de confianca.
+        if dados["last_intent"]:
+            score = dados["last_score"]
+            rotulo = f"→ {dados['last_intent']}"
+            _put(tela, y + 2, 2, rotulo[: largura - 24], curses.color_pair(C_ACCENT))
+
+            largura_barra = 12
+            preenchido = int(round(score * largura_barra))
+            cor = C_OK if score >= 0.85 else (C_WARN if score >= 0.7 else C_ERR)
+            coluna = max(len(rotulo) + 4, largura - largura_barra - 12)
+            _put(tela, y + 2, coluna, "█" * preenchido, curses.color_pair(cor))
+            _put(tela, y + 2, coluna + preenchido, "░" * (largura_barra - preenchido),
+                 curses.color_pair(C_DIM) | curses.A_DIM)
+            _put(tela, y + 2, coluna + largura_barra + 1, f"{score:.2f}",
+                 curses.color_pair(cor) | curses.A_BOLD)
+
     def _painel_atividade(self, tela, y: int, largura: int, altura: int, dados: dict) -> None:
         _put(tela, y, 0, "═" * largura, curses.color_pair(C_BAR))
-        _put(tela, y, 2, " ATIVIDADE ", curses.color_pair(C_ACCENT) | curses.A_BOLD)
 
-        eventos = dados["events"][-(altura - 1):]
-        for indice, (quando, texto, tipo) in enumerate(eventos):
+        abas = (("ATIVIDADE", "eventos"), ("MOTOR DE VOZ", "motor"))
+        coluna = 2
+        for rotulo, chave in abas:
+            ativa = self.aba == chave
+            estilo = (
+                curses.color_pair(C_ACCENT) | curses.A_BOLD
+                if ativa
+                else curses.color_pair(C_DIM) | curses.A_DIM
+            )
+            _put(tela, y, coluna, f" {rotulo} ", estilo)
+            coluna += len(rotulo) + 3
+
+        if self.aba == "eventos":
+            linhas = [
+                (q, t, tipo) for q, t, tipo in dados["events"][-(altura - 1):]
+            ]
+        else:
+            linhas = [(q, t, "motor") for q, t in dados["engine_lines"][-(altura - 1):]]
+            if not linhas:
+                linhas = [(datetime.now(), "sem saída do Vosk ainda", "info")]
+
+        for indice, (quando, texto, tipo) in enumerate(linhas):
             linha = y + 1 + indice
             if linha >= y + altura:
                 break
-            cor = {"erro": C_ERR, "aviso": C_WARN, "ok": C_OK}.get(tipo, C_DIM)
-            carimbo = quando.strftime("%H:%M:%S")
-            _put(tela, linha, 2, carimbo, curses.color_pair(C_DIM) | curses.A_DIM)
+            cor = {"erro": C_ERR, "aviso": C_WARN, "ok": C_OK, "motor": C_TITLE}.get(
+                tipo, C_DIM
+            )
+            _put(tela, linha, 2, quando.strftime("%H:%M:%S"),
+                 curses.color_pair(C_DIM) | curses.A_DIM)
             _put(tela, linha, 11, texto[: largura - 13], curses.color_pair(cor))
 
     def _rodape(self, tela, y: int, largura: int) -> None:
@@ -349,7 +449,7 @@ class JarvisUi:
 
         atalhos = [
             ("ENTER", "falar"), ("↑↓", "navegar"), ("TAB", "seção"),
-            ("/", "buscar"), ("q", "sair"),
+            ("m", "motor"), ("/", "buscar"), ("q", "sair"),
         ]
         coluna = 2
         for tecla, rotulo in atalhos:
@@ -384,6 +484,11 @@ class JarvisUi:
             self.foco = "comandos"
         elif tecla in (curses.KEY_LEFT, ord("h")):
             self.foco = "grupos"
+        elif tecla in (ord("m"), ord("M")):
+            self.aba = "motor" if self.aba == "eventos" else "eventos"
+        elif tecla == curses.KEY_RESIZE:
+            # Janela redimensionada: descarta a tela antiga por inteiro.
+            self.redesenhar = True
         elif tecla in (curses.KEY_ENTER, 10, 13):
             self.trigger.toggle()
         return True

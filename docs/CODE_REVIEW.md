@@ -183,6 +183,24 @@ avisos de biblioteca e desvia o **descritor 2** durante a abertura do PortAudio
 e o carregamento do modelo — a redireção precisa ser no nível do sistema
 operacional porque quem escreve é código C, fora do alcance do `logging`.
 
+### 15. A interface quebrava ao apertar ENTER
+
+Ao criar o reconhecedor com gramática, o Kaldi lista no stderr cada palavra que
+não está no léxico. Isso acontece exatamente ao apertar ENTER para falar. Como o
+curses desenha pelo fd 1 e não tem como saber que alguém escreveu no fd 2, o
+texto caía por cima do layout e a tela virava lixo — sem recuperação.
+
+**Correção:** o fd 2 passa a apontar para um *pipe* durante toda a vida da
+interface, e uma thread leitora entrega as linhas ao painel MOTOR DE VOZ. A
+saída não é perdida: vira funcionalidade. `sys.stdout` também é substituído por
+um proxy que roteia `print()` para o painel de atividade, e o desenho faz um
+`redrawwin()` periódico como rede de segurança.
+
+Um detalhe sutil: ao remover os handlers de console do logging para não sujar a
+tela, filtrar por `isinstance(h, StreamHandler)` removeria também o
+`RotatingFileHandler` — que herda de `StreamHandler`. O log em arquivo sumiria
+justamente durante o uso normal. A checagem passou a olhar o stream.
+
 ## Verificações que ficaram no CI
 
 | Teste | O que previne |
