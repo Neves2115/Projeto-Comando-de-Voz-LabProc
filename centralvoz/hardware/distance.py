@@ -197,7 +197,7 @@ class GpioDistanceSensor(DistanceSensor):
         self._echo = gpiozero_module.DigitalInputDevice(echo_pin)
         # O datasheet pede um intervalo de acomodacao antes da primeira medida.
         time.sleep(0.05)
-        self._log("trigger=%s echo=%s (driver proprio)", trigger_pin, echo_pin)
+        self._log_setup("trigger=%s echo=%s (driver proprio)", trigger_pin, echo_pin)
 
     def _read_once(self) -> float:
         # Disparo: 10 us em nivel alto.

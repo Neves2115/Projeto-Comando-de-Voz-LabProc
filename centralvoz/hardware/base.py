@@ -28,6 +28,17 @@ class Peripheral(ABC):
         return f"{self.name} [{'simulado' if self.simulated else 'real'}]"
 
     def _log(self, message: str, *args: object) -> None:
+        """Detalhe de periferico: DEBUG, nao INFO.
+
+        Antes cada acionamento de LED, servo e matriz virava uma linha no
+        terminal -- e o desenho da matriz saia como oito linhas de '#' a cada
+        icone. Quem quiser ver isso usa `voz run -v`.
+        """
+        prefix = "SIM" if self.simulated else "HW "
+        logger.debug("%s %-9s " + message, prefix, self.name, *args)
+
+    def _log_setup(self, message: str, *args: object) -> None:
+        """Inicializacao de periferico: essa vale INFO, acontece uma vez so."""
         prefix = "SIM" if self.simulated else "HW "
         logger.info("%s %-9s " + message, prefix, self.name, *args)
 

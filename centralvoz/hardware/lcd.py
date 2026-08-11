@@ -255,7 +255,7 @@ class I2cLcd(LcdDisplay):
         self._backlight = BIT_BACKLIGHT if backlight else 0x00
         self.address = address if address is not None else self._detect_address()
         self._init_display()
-        self._log("LCD %dx%d em 0x%02X (bus %d)", cols, rows, self.address, bus_number)
+        self._log_setup("LCD %dx%d em 0x%02X (bus %d)", cols, rows, self.address, bus_number)
 
     # -- descoberta de endereco --------------------------------------- #
 

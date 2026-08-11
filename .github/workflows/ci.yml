@@ -31,6 +31,18 @@ jobs:
       - name: Rodar os testes
         run: pytest -v
 
+      - name: Verificar erros reais (linter)
+        run: |
+          pip install ruff
+          ruff check centralvoz --select=E9,F,B
+
+      - name: Verificar que cada modulo importa isolado
+        run: |
+          python -c "import centralvoz.commands"
+          python -c "import centralvoz.app"
+          python -c "import centralvoz.hardware"
+          python -c "import centralvoz.ui"
+
       - name: Verificar que os exemplos rodam
         run: |
           for exemplo in examples/*.py; do

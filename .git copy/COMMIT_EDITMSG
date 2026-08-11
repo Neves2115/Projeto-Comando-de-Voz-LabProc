@@ -1,0 +1,24 @@
+v0.5.0: interface Jarvis, pinos corrigidos e terminal limpo
+
+Pinos (informados pelo usuario):
+- buzzer ativo GPIO12, passivo GPIO4
+- HC-SR04 TRIG GPIO14, ECHO GPIO15 (UART: exige desativar o console serial;
+  PinConfig.conflicts() avisa)
+- matriz SHCP GPIO17, DS GPIO22, STCP GPIO27
+  ATENCAO: o pedido tinha clock e latch ambos no 17. Adotei 27 para o latch
+  (padrao Freenove) porque pinos iguais fariam o latch pulsar junto com o
+  clock e embaralhar a imagem, sem dar erro.
+
+Interface Jarvis (centralvoz/ui/): curses puro, sem dependencia nova.
+- navegacao por grupos e comandos, com explicacao de cada um
+- painel de atividade ao vivo; avisos e erros vao para la
+- ENTER e push-to-talk; botao fisico segue funcionando junto
+- cai para modo texto sozinho se o terminal nao suportar (--plain forca)
+- todo desenho passa por _put(), que nunca estoura em terminal pequeno
+
+Terminal limpo:
+- log de periferico vai para DEBUG (era INFO a cada acionamento)
+- quiet.py desvia o fd 2 durante PortAudio e Kaldi (avisos do ALSA saem da
+  camada C, fora do alcance do logging)
+
+163 testes

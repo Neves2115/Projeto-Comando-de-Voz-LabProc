@@ -93,7 +93,7 @@ class GpioServo(ServoController):
             max_pulse_width=MAX_PULSE_S,
         )
         self._timer: threading.Timer | None = None
-        self._log("inicializado no pino %s", pin)
+        self._log_setup("inicializado no pino %s", pin)
 
     def _apply(self, angle: float) -> None:
         self._device.angle = angle

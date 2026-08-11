@@ -241,7 +241,7 @@ class ShiftRegisterMatrix(LedMatrix):
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._refresh_loop, daemon=True)
         self._thread.start()
-        self._log("data=%s clock=%s latch=%s", data_pin, clock_pin, latch_pin)
+        self._log_setup("data=%s clock=%s latch=%s", data_pin, clock_pin, latch_pin)
 
     def _shift_out(self, byte: int) -> None:
         for bit in range(8):

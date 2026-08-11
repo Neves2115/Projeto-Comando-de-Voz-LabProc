@@ -50,7 +50,7 @@ class GpioButton(Trigger):
 
     def __init__(self, pin: int, gpiozero_module) -> None:
         self._button = gpiozero_module.Button(pin, pull_up=True, bounce_time=0.05)
-        self._log("botao push-to-talk no pino %s (para o GND)", pin)
+        self._log_setup("botao push-to-talk no pino %s (para o GND)", pin)
 
     def wait_for_activation(self, timeout: float | None = None) -> bool:
         return bool(self._button.wait_for_press(timeout=timeout))

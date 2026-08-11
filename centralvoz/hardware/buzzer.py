@@ -188,7 +188,7 @@ class ActiveBuzzer(Buzzer):
         self._device = gpiozero_module.DigitalOutputDevice(
             pin, active_high=active_high, initial_value=False
         )
-        self._log("ativo no pino %s", pin)
+        self._log_setup("ativo no pino %s", pin)
 
     def _tone_on(self, _frequency: float) -> None:
         # A frequencia e ignorada: quem define o tom e o oscilador interno.
@@ -217,7 +217,7 @@ class PassiveBuzzer(Buzzer):
         # PWMOutputDevice em vez de TonalBuzzer: o TonalBuzzer limita a faixa a
         # uma oitava em torno de um tom central, o que corta as melodias.
         self._device = gpiozero_module.PWMOutputDevice(pin, frequency=440, initial_value=0)
-        self._log("passivo no pino %s", pin)
+        self._log_setup("passivo no pino %s", pin)
 
     def _tone_on(self, frequency: float) -> None:
         if frequency <= 0:

@@ -15,17 +15,47 @@ física da barra de pinos.
 | Servo SG90 | VCC | — | 2 ou 4 (5 V) | **fonte externa se o servo tiver carga** |
 | Servo SG90 | GND | — | 6 | GND comum com o Pi |
 | Botão push-to-talk | — | 26 | 37 | outro terminal no GND (pino 39) |
-| Buzzer ativo | sinal | 17 | 11 | módulo com transistor |
-| Buzzer passivo | sinal | 27 | 13 | precisa de PWM para tocar notas |
-| HC-SR04 | TRIG | 23 | 16 | |
-| HC-SR04 | ECHO | 24 | 18 | **divisor de tensão obrigatório** |
+| Buzzer ativo | sinal | 12 | 32 | módulo com transistor |
+| Buzzer passivo | sinal | 4 | 7 | precisa de PWM para tocar notas |
+| HC-SR04 | TRIG | 14 | 8 | **UART TXD** — veja o aviso abaixo |
+| HC-SR04 | ECHO | 15 | 10 | **UART RXD** + divisor de tensão obrigatório |
 | HC-SR04 | VCC | — | 2 (5 V) | |
 | LCD 1602 I2C | SDA | 2 | 3 | |
 | LCD 1602 I2C | SCL | 3 | 5 | |
 | LCD 1602 I2C | VCC | — | 4 (5 V) | o módulo aceita 5 V; o I2C é tolerante |
-| Matriz 8x8 (74HC595) | DS | 16 | 36 | dados |
-| Matriz 8x8 (74HC595) | SHCP | 20 | 38 | clock do shift |
-| Matriz 8x8 (74HC595) | STCP | 21 | 40 | latch |
+| Matriz 8x8 (74HC595) | SHCP | 17 | 11 | clock do shift |
+| Matriz 8x8 (74HC595) | DS | 22 | 15 | dados |
+| Matriz 8x8 (74HC595) | STCP | 27 | 13 | latch |
+
+## ⚠️ GPIO14 e GPIO15 são o UART
+
+O sensor de distância usa esses dois pinos, que por padrão pertencem ao console
+serial. Enquanto o console estiver ligado, o kernel fica escrevendo pela TXD e o
+sensor lê lixo (ou nada).
+
+```bash
+sudo raspi-config
+# Interface Options -> Serial Port
+#   "login shell acessível pela serial?"  -> NÃO
+#   "hardware serial habilitado?"          -> NÃO
+sudo reboot
+```
+
+Confira depois com `voz doctor`: ele faz uma leitura real do sensor.
+
+## ⚠️ Matriz: clock e latch precisam ser pinos diferentes
+
+Você passou `(17, 22, 17)` para clock, data e latch — o 17 repetido. Isso não
+funciona: o latch pulsaria junto com o clock e a imagem sairia embaralhada, sem
+dar erro nenhum. Adotei **STCP = GPIO27**, que é o valor usado nos tutoriais
+Freenove. Se o seu latch estiver em outro pino, ajuste no `config.toml`:
+
+```toml
+[pins]
+matrix_latch = 27
+```
+
+`voz doctor` avisa quando dois periféricos disputam o mesmo GPIO.
 
 ## LED RGB: ânodo comum
 
@@ -143,5 +173,6 @@ contraste no verso do módulo — é o erro mais comum e não é software.
 - GPIO14 e GPIO15 são o UART (console serial).
 - GPIO18 é PWM de hardware. Deixe para o servo — o LED RGB usa PWM por software,
   que é suficiente para luz mas não para servo.
-- GPIO5, 6 e 13 estão com o LED RGB; 17 e 27 com os buzzers; a matriz em 16/20/21.
+- GPIO5, 6 e 13: LED RGB. GPIO4 e 12: buzzers. GPIO17, 22 e 27: matriz.
+- GPIO14 e 15: sensor de distância (eram o UART — desative o console serial).
 - GPIO7–11 são SPI. Livres se você não usar SPI, mas evite por segurança.

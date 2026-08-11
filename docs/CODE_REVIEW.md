@@ -170,6 +170,19 @@ preservando acentos) para montar a gramática; `normalize_text()` continua sendo
 usado só para comparar. As frases em `router.py` foram reescritas acentuadas.
 `voz doctor` passou a verificar se a gramática é aceita.
 
+### 14. Terminal poluído
+
+Cada acionamento de LED, servo e matriz virava uma linha no terminal, e o
+desenho da matriz saía como oito linhas de `#` a cada ícone. Somado aos avisos
+do ALSA sobre placas inexistentes e ao `PinFactoryFallback` do gpiozero, a saída
+ficava ilegível.
+
+**Correção:** `Peripheral._log` passou para DEBUG (`_log_setup` mantém a
+inicialização em INFO, que acontece uma vez); `centralvoz/quiet.py` filtra os
+avisos de biblioteca e desvia o **descritor 2** durante a abertura do PortAudio
+e o carregamento do modelo — a redireção precisa ser no nível do sistema
+operacional porque quem escreve é código C, fora do alcance do `logging`.
+
 ## Verificações que ficaram no CI
 
 | Teste | O que previne |
@@ -193,6 +206,9 @@ usado só para comparar. As frases em `router.py` foram reescritas acentuadas.
 | `test_gramatica_preserva_acentos` | volta da gramática rejeitada pelo Vosk |
 | `test_casamento_ignora_acento` | acento quebrando o casamento |
 | `test_todos_os_icones_sao_validos` | ícone com padrão malformado |
+| `test_toda_intencao_aparece_em_algum_grupo` | comando invisível na interface |
+| `test_estado_e_seguro_entre_threads` | corrida entre o loop de voz e a UI |
+| `test_pinos_nao_conflitam` | dois periféricos no mesmo GPIO |
 
 ## O que revisei e está correto
 

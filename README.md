@@ -1,4 +1,6 @@
-# Central de comandos por voz — Raspberry Pi 3 + kit Freenove
+# Jarvis — central de comandos por voz
+
+**Raspberry Pi 3 + kit Freenove.**
 
 Reconhecimento de fala **offline** (Vosk) acionando LED, servomotor, LCD 16x2 I2C,
 sensor ultrassônico e matriz de LEDs. Sem internet, sem API externa, sem nuvem.
@@ -37,7 +39,8 @@ voz mic               # mede o nível de captura e diz se o ganho está bom
 voz selftest          # aciona cada periférico em sequência
 voz text --mock       # digita comandos, sem hardware e sem microfone
 voz say "ligar led"   # executa um comando único
-voz run               # loop de voz completo (push-to-talk)
+voz run               # Jarvis: interface completa (push-to-talk)
+voz run --plain       # mesma coisa, sem interface
 ```
 
 Todo subcomando aceita `--mock` (simula tudo), `--real` (força hardware) e
@@ -122,11 +125,11 @@ Pinagem padrão (numeração BCM), toda configurável em `config.toml`:
 | LED RGB | R=GPIO5, G=GPIO6, B=GPIO13, comum=3,3 V (ânodo comum) |
 | Servo | GPIO18 (PWM por hardware) |
 | Botão push-to-talk | GPIO26 → GND (pull-up interno) |
-| HC-SR04 | TRIG GPIO23, ECHO GPIO24 **com divisor de tensão** |
+| HC-SR04 | TRIG GPIO14, ECHO GPIO15 **com divisor de tensão** — desative o console serial |
 | LCD 1602 I2C | SDA GPIO2, SCL GPIO3, VCC 5 V, GND |
-| Buzzer ativo | GPIO17 |
-| Buzzer passivo | GPIO27 (PWM para tocar notas) |
-| Matriz 8x8 (74HC595) | DS GPIO16, SHCP GPIO20, STCP GPIO21 |
+| Buzzer ativo | GPIO12 |
+| Buzzer passivo | GPIO4 (PWM para tocar notas) |
+| Matriz 8x8 (74HC595) | SHCP GPIO17, DS GPIO22, STCP GPIO27 |
 
 ⚠️ O ECHO do HC-SR04 entrega 5 V e o GPIO só aceita 3,3 V. Use divisor
 (1 kΩ + 2 kΩ) ou você vai queimar o pino. Detalhes em [`docs/ligacoes.md`](docs/ligacoes.md).
@@ -255,6 +258,46 @@ comando mentia, porque a chamada era engolida em silêncio.
 
 Confira os pinos em [`docs/ligacoes.md`](docs/ligacoes.md): DS=GPIO16,
 SHCP=GPIO20, STCP=GPIO21. Eles mudaram na v0.3.0 porque colidiam com o LED RGB.
+
+## A interface
+
+`voz run` abre o Jarvis, uma interface de terminal que mostra os comandos
+disponíveis, explica cada um e acompanha a execução ao vivo.
+
+```
+════════════════════════════════════════════════════════════════
+   J A R V I S   central de comandos por voz      [ PRONTO ]  14:32:05
+════════════════════════════════════════════════════════════════
+ COMANDOS          │  LUZ RGB
+                   │
+ ▸ Luz RGB         │  LED RGB de ânodo comum. Aceita 15 cores,
+   Servo           │  incluindo misturas como amarelo e turquesa.
+   Distância       │
+   Som             │    "ligar luz"
+   Desenhos        │    "acender <cor>"
+   Ditado          │      também: acender cor / ligar cor / luz cor
+   Sistema         │    "trocar de cor"
+══ ATIVIDADE ═══════════════════════════════════════════════════
+  14:31:58  "acender azul" → Luz azul
+  14:32:03  "monitorar distância" → Monitorando por 20 s
+════════════════════════════════════════════════════════════════
+  ENTER falar   ↑↓ navegar   TAB seção   / buscar   q sair
+```
+
+| Tecla | O que faz |
+|---|---|
+| `ENTER` | começa e termina a fala (push-to-talk) |
+| `↑` `↓` | navega; `j`/`k` também funcionam |
+| `TAB` | alterna entre a lista de grupos e a de comandos |
+| `/` | busca um comando pelo nome |
+| `q` | sai |
+
+O botão físico do GPIO26 continua funcionando junto com o ENTER. Se o terminal
+não suportar (`TERM` vazio, saída redirecionada), o Jarvis cai sozinho para o
+modo texto — ou force com `--plain`.
+
+Avisos e erros aparecem no painel ATIVIDADE em vez de sujarem a tela. O log
+completo continua em `logs/centralvoz.log`.
 
 ## O sensor de distância não responde?
 

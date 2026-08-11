@@ -28,6 +28,7 @@ from .config import AppConfig
 from .utils import ensure_dir
 from .hardware.factory import build_hardware
 from .logging_setup import setup_logging
+from .quiet import quiet_libraries, suppress_native_stderr
 from .speech.vosk_engine import SpeechUnavailable, VoskEngine
 from .storage.db import Storage
 
@@ -73,6 +74,10 @@ def _add_global_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "-v", "--verbose", action="store_true", default=argparse.SUPPRESS,
         help="log em nivel DEBUG",
+    )
+    parser.add_argument(
+        "--plain", action="store_true", default=argparse.SUPPRESS,
+        help="modo texto simples, sem a interface Jarvis",
     )
 
 
@@ -140,7 +145,12 @@ def _config_from_args(args: argparse.Namespace) -> AppConfig:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     config = _config_from_args(args)
+
+    quiet_libraries()
     setup_logging(config.log_dir, config.log_level)
+
+    for problema in config.pins.conflicts():
+        logger.warning("Pinagem: %s", problema)
 
     if args.command == "doctor":
         from .doctor import print_report
@@ -162,12 +172,20 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "say":
         return _cmd_say(config, " ".join(args.text))
     if args.command == "run":
-        return _cmd_run(config)
+        return _cmd_run(config, plain=bool(getattr(args, "plain", False)))
 
     return 2
 
 
 # --------------------------------------------------------------------------- #
+
+
+def _curses_disponivel() -> bool:
+    try:
+        import curses  # noqa: PLC0415, F401
+    except ImportError:
+        return False
+    return bool(os.environ.get("TERM", "")) and os.environ["TERM"] != "dumb"
 
 
 def _cmd_devices() -> int:
@@ -421,27 +439,46 @@ def _cmd_text(config: AppConfig) -> int:
     return 0
 
 
-def _cmd_run(config: AppConfig) -> int:
+def _cmd_run(config: AppConfig, plain: bool = False) -> int:
     microphone = Microphone(config.audio)
     try:
-        microphone.check()
-        engine = VoskEngine(config.speech.model_path, microphone.sample_rate)
-        engine.load()
+        # O ALSA despeja dezenas de avisos sobre placas inexistentes ao abrir o
+        # PortAudio, e o Kaldi escreve direto no stderr ao carregar o modelo.
+        # Sao ruidos conhecidos e inofensivos.
+        with suppress_native_stderr():
+            microphone.check()
+            engine = VoskEngine(config.speech.model_path, microphone.sample_rate)
+            engine.load()
     except (AudioUnavailable, SpeechUnavailable) as exc:
         print(f"\n[NAO DA PARA OUVIR AINDA]\n{exc}\n")
         print("Enquanto isso, teste a logica toda com:  voz text --mock\n")
         return 1
 
+    usar_ui = not plain and sys.stdout.isatty() and _curses_disponivel()
+
     with build_hardware(config) as hardware, Storage(config.db_path) as storage:
+        storage.log_event("startup", result=hardware.summary())
+
+        if usar_ui:
+            from .ui.runtime import run_jarvis
+
+            try:
+                return run_jarvis(config, hardware, storage, engine, microphone)
+            except Exception as exc:  # noqa: BLE001
+                # Terminal exotico, TERM invalido, janela minuscula: cai para o
+                # modo texto em vez de morrer.
+                logger.warning("Interface Jarvis indisponivel (%s). Modo simples.", exc)
+            finally:
+                storage.log_event("shutdown")
+
         controller = VoiceCommandController(config, hardware, storage)
         loop = VoiceLoop(config, controller, engine, microphone)
 
         # Ctrl+C: a primeira vez pede parada limpa; a segunda mata na marra.
         #
-        # Isso existe porque uma chamada de hardware travada (o caso classico e
-        # o HC-SR04 com o ECHO mudo) deixa a thread principal presa. O tratador
-        # roda, imprime "Encerrando...", retorna -- e a chamada continua
-        # bloqueada. Sem a saida forcada, o unico jeito de fechar era `kill`.
+        # Isso existe porque uma chamada de hardware travada deixa a thread
+        # principal presa. O tratador roda, imprime, retorna -- e a chamada
+        # continua bloqueada.
         pedidos = {"n": 0}
 
         def _handle_signal(*_args: object) -> None:
@@ -450,17 +487,14 @@ def _cmd_run(config: AppConfig) -> int:
                 print("\nEncerrando... (Ctrl+C de novo para forcar)")
                 loop.stop()
                 return
-
             print("\nSaida forcada.")
             hardware.close()
-            # os._exit pula o atexit e o join de threads travadas em I/O.
             os._exit(130)
 
         signal.signal(signal.SIGINT, _handle_signal)
         signal.signal(signal.SIGTERM, _handle_signal)
 
         print(f"\nHardware: {hardware.summary()}")
-        storage.log_event("startup", result=hardware.summary())
         try:
             loop.run()
         except KeyboardInterrupt:

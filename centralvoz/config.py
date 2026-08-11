@@ -28,19 +28,72 @@ class PinConfig:
     servo: int = 18  # GPIO18 = pino de PWM por hardware, o melhor para servo
     button: int = 26  # botao push-to-talk, ligado entre o GPIO e o GND
     # Buzzers do kit. O ativo so liga/desliga; o passivo toca notas (precisa PWM).
-    buzzer_active: int = 17
-    buzzer_passive: int = 27
+    buzzer_active: int = 12
+    buzzer_passive: int = 4
     #: Alguns modulos de buzzer ativo acionam em nivel BAIXO.
     buzzer_active_high: bool = True
 
-    distance_trigger: int = 23
-    distance_echo: int = 24  # ATENCAO: use divisor de tensao, o echo do HC-SR04 e 5V
-    # Matriz 8x8 com dois 74HC595 encadeados (opcional).
-    # ATENCAO: em conflito com os pinos do LED RGB acima. Se for usar a matriz,
-    # mova-a para outros pinos livres (ex.: 16, 20, 21).
-    matrix_data: int = 16
-    matrix_clock: int = 20
-    matrix_latch: int = 21
+    # ATENCAO: GPIO14 e GPIO15 sao o UART (TXD/RXD). Funcionam como GPIO comum,
+    # mas so depois de desativar o console serial:
+    #     sudo raspi-config -> Interface Options -> Serial Port
+    #     login shell = No,  hardware serial = Yes/No (tanto faz aqui)
+    # Sem isso o kernel fica falando pela TXD e o sensor le lixo.
+    distance_trigger: int = 14
+    distance_echo: int = 15  # use divisor de tensao: o echo do HC-SR04 e 5V
+    # Matriz 8x8 com dois 74HC595 encadeados.
+    matrix_data: int = 22   # DS   / SER
+    matrix_clock: int = 17  # SHCP / SRCLK
+    matrix_latch: int = 27  # STCP / RCLK
+
+
+    def used_pins(self) -> dict[str, int]:
+        """Mapa nome -> GPIO de tudo que ocupa um pino."""
+        return {
+            "rgb_red": self.rgb_red,
+            "rgb_green": self.rgb_green,
+            "rgb_blue": self.rgb_blue,
+            "servo": self.servo,
+            "button": self.button,
+            "buzzer_active": self.buzzer_active,
+            "buzzer_passive": self.buzzer_passive,
+            "distance_trigger": self.distance_trigger,
+            "distance_echo": self.distance_echo,
+            "matrix_data": self.matrix_data,
+            "matrix_clock": self.matrix_clock,
+            "matrix_latch": self.matrix_latch,
+        }
+
+    def conflicts(self) -> list[str]:
+        """Problemas de pinagem, em linguagem humana.
+
+        Dois perifericos no mesmo GPIO nao da erro nenhum ao iniciar: o
+        programa sobe normalmente e os dois simplesmente se atrapalham. Por
+        isso a checagem e explicita.
+        """
+        problemas: list[str] = []
+        usados = self.used_pins()
+
+        por_pino: dict[int, list[str]] = {}
+        for nome, pino in usados.items():
+            por_pino.setdefault(pino, []).append(nome)
+
+        for pino, nomes in sorted(por_pino.items()):
+            if len(nomes) > 1:
+                problemas.append(
+                    f"GPIO{pino} esta atribuido a {' e '.join(nomes)} ao mesmo tempo."
+                )
+
+        for nome, pino in usados.items():
+            if pino in (2, 3):
+                problemas.append(
+                    f"{nome} usa GPIO{pino}, que e exclusivo do I2C (LCD)."
+                )
+            if pino in (14, 15):
+                problemas.append(
+                    f"{nome} usa GPIO{pino} (UART). Desative o console serial em "
+                    "raspi-config, senao o kernel interfere no sinal."
+                )
+        return problemas
 
 
 @dataclass
