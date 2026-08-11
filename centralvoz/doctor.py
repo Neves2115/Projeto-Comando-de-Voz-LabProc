@@ -171,7 +171,7 @@ def _check_audio(config: AppConfig) -> list[Check]:
         from .audio.microphone import list_input_devices
 
         devices = list_input_devices()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return [Check(FAIL, "Audio", str(exc), "sudo apt install -y libportaudio2")]
 
     if not devices:

@@ -48,7 +48,23 @@ class NullPeripheral(Peripheral):
     def close(self) -> None:  # pragma: no cover - trivial
         pass
 
+    #: Atributos que devem responder com um VALOR, nao com uma funcao.
+    #: Sem isso, `if hardware.leds.is_on:` seria sempre verdadeiro (uma funcao
+    #: e truthy), e handlers tomariam decisoes erradas quando o periferico
+    #: estivesse ausente.
+    _VALUE_ATTRS = {
+        "is_on": False,
+        "simulated": True,
+        "color": (0.0, 0.0, 0.0),
+        "color_name": "preto",
+        "angle": 0.0,
+        "prompt": "indisponivel",
+    }
+
     def __getattr__(self, item: str):
+        if item in self._VALUE_ATTRS:
+            return self._VALUE_ATTRS[item]
+
         def _noop(*_args: object, **_kwargs: object) -> None:
             logger.debug("%s ausente (%s): ignorando %s()", self.name, self.reason, item)
 

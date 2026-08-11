@@ -175,7 +175,7 @@ class ShiftRegisterMatrix(LedMatrix):
                     self._shift_out(~(1 << index) & 0xFF)      # linha ativa em nivel baixo
                     self._rclk.on()
                     self._rclk.off()
-                except Exception:  # noqa: BLE001
+                except Exception:
                     self._stop.set()
                     break
                 time.sleep(row_time)
@@ -191,5 +191,5 @@ class ShiftRegisterMatrix(LedMatrix):
             try:
                 device.off()
                 device.close()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass

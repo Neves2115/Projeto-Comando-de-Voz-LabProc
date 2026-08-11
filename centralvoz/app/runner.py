@@ -64,6 +64,11 @@ class VoiceLoop:
                     break
 
                 text = self._capture(blocks)
+                # Descarta ativacoes que chegaram durante a captura: sem isso,
+                # ENTER apertado enquanto o sistema processa vira uma nova
+                # captura vazia assim que o loop volta.
+                trigger.flush()
+
                 if not text:
                     hardware.lcd.show_lines("Nao ouvi nada", "tente de novo")
                     hardware.matrix.show_icon("alerta")
@@ -72,11 +77,13 @@ class VoiceLoop:
                 self._last_activity = time.monotonic()
                 reply = self.controller.handle_text(text)
                 print(f"  > {reply.message}")
+                trigger.flush()
                 if reply.stop:
                     break
 
     def stop(self) -> None:
         self._running = False
+        self.controller.close()
 
     # ------------------------------------------------------------------ #
 

@@ -1,4 +1,9 @@
 # Copie para config.toml e ajuste. Tudo aqui e opcional.
+#
+#   cp config.example.toml config.toml
+#
+# Precedencia: argumento de linha de comando > variavel de ambiente >
+# este arquivo > padrao do codigo.
 
 # true = nao toca em nenhum pino GPIO (roda em qualquer maquina)
 mock = false
@@ -14,14 +19,23 @@ log_level = "INFO"
 save_recordings = false   # true grava os .wav para depurar reconhecimento ruim
 
 [pins]
-leds = [17]
+# LED RGB do kit Freenove. Com o terminal comum no 3,3 V o modulo e de
+# ANODO COMUM: acende em nivel baixo. Se as cores sairem trocadas (voce pede
+# vermelho e acende ciano), inverta rgb_active_high.
+rgb_red = 5
+rgb_green = 6
+rgb_blue = 13
+rgb_active_high = false
+
 servo = 18                # GPIO18 = PWM por hardware
 button = 26               # botao push-to-talk: GPIO26 -> GND
 distance_trigger = 23
 distance_echo = 24        # use divisor de tensao! o HC-SR04 devolve 5V
-matrix_data = 5
-matrix_clock = 6
-matrix_latch = 13
+
+# Matriz 8x8 (74HC595). NAO pode colidir com os pinos do LED RGB acima.
+matrix_data = 16
+matrix_clock = 20
+matrix_latch = 21
 
 [lcd]
 enabled = true
@@ -36,10 +50,10 @@ enabled = false           # ligue depois de conferir a fiacao dos 74HC595
 refresh_hz = 160.0
 
 [audio]
-sample_rate = 16000
-# input_device = 1        # veja os indices com: voz devices
 # O projeto negocia a taxa com o microfone. 16000 e so a preferencia inicial:
-# se o dispositivo recusar, ele usa 48000/44100 e o Vosk reamostra.
+# se o dispositivo recusar, usa 48000/44100 e o Vosk reamostra internamente.
+sample_rate = 16000
+# input_device = 2        # veja os indices com: voz devices
 max_utterance_s = 12.0
 min_utterance_s = 0.35
 
@@ -52,5 +66,7 @@ match_threshold = 0.70    # menor = aceita mais, erra mais
 servo_open_angle = 90.0
 servo_closed_angle = 0.0
 distance_warning_cm = 20.0
-monitor_duration_s = 15.0
+monitor_duration_s = 20.0   # duracao do "monitorar distancia"
+party_duration_s = 12.0     # duracao do "modo festa" e do ciclo de cores
+color_cycle_step_s = 0.35   # tempo em cada cor
 dictation_timeout_s = 45.0

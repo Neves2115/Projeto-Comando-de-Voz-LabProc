@@ -19,15 +19,22 @@ DEFAULT_CONFIG_FILE = Path("config.toml")
 class PinConfig:
     """Numeracao BCM (a mesma que o gpiozero usa)."""
 
-    leds: tuple[int, ...] = (17,)
+    # LED RGB do kit Freenove. Comum em 3,3 V => anodo comum (acende em LOW).
+    rgb_red: int = 5
+    rgb_green: int = 6
+    rgb_blue: int = 13
+    #: True se o seu modulo for de catodo comum (comum no GND).
+    rgb_active_high: bool = False
     servo: int = 18  # GPIO18 = pino de PWM por hardware, o melhor para servo
     button: int = 26  # botao push-to-talk, ligado entre o GPIO e o GND
     distance_trigger: int = 23
     distance_echo: int = 24  # ATENCAO: use divisor de tensao, o echo do HC-SR04 e 5V
     # Matriz 8x8 com dois 74HC595 encadeados (opcional).
-    matrix_data: int = 5
-    matrix_clock: int = 6
-    matrix_latch: int = 13
+    # ATENCAO: em conflito com os pinos do LED RGB acima. Se for usar a matriz,
+    # mova-a para outros pinos livres (ex.: 16, 20, 21).
+    matrix_data: int = 16
+    matrix_clock: int = 20
+    matrix_latch: int = 21
 
 
 @dataclass
@@ -76,7 +83,9 @@ class BehaviorConfig:
     servo_open_angle: float = 90.0
     servo_closed_angle: float = 0.0
     distance_warning_cm: float = 20.0
-    monitor_duration_s: float = 15.0
+    monitor_duration_s: float = 20.0
+    party_duration_s: float = 12.0
+    color_cycle_step_s: float = 0.35
     dictation_timeout_s: float = 45.0
 
 

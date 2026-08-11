@@ -7,6 +7,9 @@ from enum import Enum
 
 class Intent(str, Enum):
     LED_ON = "led_on"
+    LED_COLOR = "led_color"
+    LED_CYCLE = "led_cycle"
+    LED_BRIGHTNESS = "led_brightness"
     LED_OFF = "led_off"
     LED_BLINK = "led_blink"
     LED_BLINK_N = "led_blink_n"
@@ -18,6 +21,7 @@ class Intent(str, Enum):
 
     DISTANCE_READ = "distance_read"
     DISTANCE_MONITOR = "distance_monitor"
+    STOP_TASK = "stop_task"
 
     DICTATION_START = "dictation_start"
     DICTATION_STOP = "dictation_stop"

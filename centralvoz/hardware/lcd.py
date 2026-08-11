@@ -154,7 +154,7 @@ class I2cLcd(LcdDisplay):
     ) -> None:
         super().__init__(cols=cols, rows=rows, page_delay_s=page_delay_s)
         try:
-            from smbus2 import SMBus  # noqa: PLC0415
+            from smbus2 import SMBus
         except ImportError as exc:  # pragma: no cover
             raise RuntimeError(
                 "smbus2 nao instalado. Rode: sudo apt install -y python3-smbus2"
@@ -249,5 +249,5 @@ class I2cLcd(LcdDisplay):
             self._command(CMD_CLEAR)
             self.set_backlight(False)
             self._bus.close()
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass

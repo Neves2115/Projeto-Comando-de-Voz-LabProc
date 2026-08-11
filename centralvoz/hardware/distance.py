@@ -72,5 +72,5 @@ class GpioDistanceSensor(DistanceSensor):
     def close(self) -> None:
         try:
             self._device.close()
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass

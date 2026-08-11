@@ -48,7 +48,7 @@ class AudioUnavailable(RuntimeError):
 
 def _import_sounddevice():
     try:
-        import sounddevice  # noqa: PLC0415
+        import sounddevice
     except ImportError as exc:
         raise AudioUnavailable(
             "sounddevice nao instalado.\n"
@@ -72,7 +72,7 @@ def supported_rates(device: int | str | None, channels: int = 1) -> list[int]:
                 device=device, channels=channels, samplerate=rate, dtype="int16"
             )
             aceitas.append(rate)
-        except Exception:  # noqa: BLE001
+        except Exception:
             continue
     return aceitas
 
@@ -169,7 +169,7 @@ class Microphone:
                 if device is not None
                 else self._sd.query_devices(kind="input")
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise AudioUnavailable(
                 f"Nao consegui consultar o dispositivo de entrada ({exc}).\n"
                 "Liste as opcoes com: voz devices"
@@ -202,7 +202,7 @@ class Microphone:
                         samplerate=taxa,
                         dtype="int16",
                     )
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     erros.append(f"{taxa} Hz x {n_canais}ch: {exc}")
                     continue
 

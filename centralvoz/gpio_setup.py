@@ -157,7 +157,7 @@ def import_gpiozero(preferred: str | None = None):
     """Configura a fabrica e devolve o modulo gpiozero ja pronto."""
     configure_pin_factory(preferred)
     try:
-        import gpiozero  # noqa: PLC0415  (import tardio e proposital)
+        import gpiozero
     except ImportError as exc:  # pragma: no cover
         raise GpioUnavailable(
             "gpiozero nao esta instalado. Rode: pip install 'centralvoz[pi]'"

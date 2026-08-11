@@ -16,7 +16,7 @@ from ..gpio_setup import GpioUnavailable, import_gpiozero
 from .base import NullPeripheral, Peripheral
 from .distance import DistanceSensor, GpioDistanceSensor, MockDistanceSensor
 from .lcd import I2cLcd, LcdDisplay, MockLcd
-from .led import GpioLeds, LedController, MockLeds
+from .rgb import GpioRgbLed, MockRgbLed, RgbLed
 from .matrix import LedMatrix, MockMatrix, ShiftRegisterMatrix
 from .servo import GpioServo, MockServo, ServoController
 from .trigger import GpioButton, KeyboardTrigger, Trigger
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class HardwareSet:
-    leds: LedController
+    leds: RgbLed
     servo: ServoController
     lcd: LcdDisplay
     distance: DistanceSensor
@@ -44,7 +44,7 @@ class HardwareSet:
         for item in self.all():
             try:
                 item.close()
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.warning("Erro ao fechar %s: %s", item.name, exc)
 
     def __enter__(self) -> "HardwareSet":
@@ -83,7 +83,7 @@ def build_hardware(config: AppConfig, *, minimal: bool = False) -> HardwareSet:
 def _build_mock(config: AppConfig) -> HardwareSet:
     pins = config.pins
     return HardwareSet(
-        leds=MockLeds(pins.leds),
+        leds=MockRgbLed(pins.rgb_red, pins.rgb_green, pins.rgb_blue),
         servo=MockServo(pins.servo),
         lcd=MockLcd(
             cols=config.lcd.cols,
@@ -129,7 +129,7 @@ def _build_trigger(config: AppConfig) -> Trigger:
     try:
         gpiozero = import_gpiozero(config.pin_factory)
         return GpioButton(config.pins.button, gpiozero)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.error(
             "Botao no GPIO%s indisponivel (%s). Caindo para o teclado (ENTER).",
             config.pins.button,
@@ -141,7 +141,7 @@ def _build_trigger(config: AppConfig) -> Trigger:
 def _build_minimal(config: AppConfig) -> HardwareSet:
     """Só LCD + gatilho. Usado pelo `voz hello`."""
     return HardwareSet(
-        leds=NullPeripheral("led", "nao usado no modo minimo"),          # type: ignore[arg-type]
+        leds=NullPeripheral("rgb", "nao usado no modo minimo"),          # type: ignore[arg-type]
         servo=NullPeripheral("servo", "nao usado no modo minimo"),       # type: ignore[arg-type]
         lcd=_build_lcd(config),
         distance=NullPeripheral("distancia", "nao usado no modo minimo"),  # type: ignore[arg-type]
@@ -155,9 +155,15 @@ def _build_real(config: AppConfig, gpiozero) -> HardwareSet:
     pins = config.pins
 
     leds = _safe(
-        "led",
-        lambda: GpioLeds(pins.leds, gpiozero),
-        fallback=lambda: MockLeds(pins.leds),
+        "rgb",
+        lambda: GpioRgbLed(
+            pins.rgb_red,
+            pins.rgb_green,
+            pins.rgb_blue,
+            gpiozero,
+            active_high=pins.rgb_active_high,
+        ),
+        fallback=lambda: MockRgbLed(pins.rgb_red, pins.rgb_green, pins.rgb_blue),
     )
     servo = _safe(
         "servo",
@@ -211,7 +217,7 @@ def _safe(label: str, build, fallback):
     """Tenta o periferico real; se falhar, avisa alto e usa o substituto."""
     try:
         return build()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.error(
             "Nao consegui inicializar '%s' (%s). Seguindo em modo simulado SO para "
             "este periferico.",

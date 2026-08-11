@@ -7,7 +7,10 @@ física da barra de pinos.
 
 | Periférico | Sinal | GPIO (BCM) | Pino físico | Observação |
 |---|---|---|---|---|
-| LED | ânodo | 17 | 11 | resistor de 220 Ω em série até o GND |
+| LED RGB (R) | vermelho | 5 | 29 | módulo Freenove |
+| LED RGB (G) | verde | 6 | 31 | |
+| LED RGB (B) | azul | 13 | 33 | |
+| LED RGB (comum) | 3,3 V | — | 1 ou 17 | **ânodo comum**: acende em nível baixo |
 | Servo SG90 | sinal | 18 | 12 | PWM por hardware |
 | Servo SG90 | VCC | — | 2 ou 4 (5 V) | **fonte externa se o servo tiver carga** |
 | Servo SG90 | GND | — | 6 | GND comum com o Pi |
@@ -18,9 +21,38 @@ física da barra de pinos.
 | LCD 1602 I2C | SDA | 2 | 3 | |
 | LCD 1602 I2C | SCL | 3 | 5 | |
 | LCD 1602 I2C | VCC | — | 4 (5 V) | o módulo aceita 5 V; o I2C é tolerante |
-| Matriz 8x8 (74HC595) | DS | 5 | 29 | dados |
-| Matriz 8x8 (74HC595) | SHCP | 6 | 31 | clock do shift |
-| Matriz 8x8 (74HC595) | STCP | 13 | 33 | latch |
+| Matriz 8x8 (74HC595) | DS | 16 | 36 | dados |
+| Matriz 8x8 (74HC595) | SHCP | 20 | 38 | clock do shift |
+| Matriz 8x8 (74HC595) | STCP | 21 | 40 | latch |
+
+## LED RGB: ânodo comum
+
+Com o terminal comum ligado no **3,3 V**, o módulo é de ânodo comum — a corrente
+sai do comum e entra pelo GPIO, então o LED acende quando o pino vai para nível
+**baixo**. É por isso que o código usa `active_high=False`.
+
+Se as cores saírem trocadas (você pede vermelho e acende ciano), o seu módulo é
+de cátodo comum: mude no `config.toml`.
+
+```toml
+[pins]
+rgb_active_high = true
+```
+
+Os módulos Freenove já trazem resistores embutidos. Se você montou com LED RGB
+avulso na protoboard, coloque um resistor de 220 Ω em **cada** perna de cor.
+
+Teste rápido de cada canal:
+
+```bash
+voz say --mock "acender vermelho"   # confere a lógica
+voz say "acender vermelho"          # confere o hardware
+voz say "acender verde"
+voz say "acender azul"
+```
+
+Se só uma cor não acende, é aquele fio/pino. Se todas acendem na cor errada, é o
+`rgb_active_high`.
 
 ## ⚠️ Divisor de tensão no ECHO
 
@@ -77,5 +109,7 @@ contraste no verso do módulo — é o erro mais comum e não é software.
 
 - GPIO2 e GPIO3 são exclusivos do I2C. Não use para mais nada.
 - GPIO14 e GPIO15 são o UART (console serial).
-- GPIO18 é PWM de hardware. Deixe para o servo.
+- GPIO18 é PWM de hardware. Deixe para o servo — o LED RGB usa PWM por software,
+  que é suficiente para luz mas não para servo.
+- GPIO5, 6 e 13 estão com o LED RGB. Se for usar a matriz, ela vai em 16/20/21.
 - GPIO7–11 são SPI. Livres se você não usar SPI, mas evite por segurança.

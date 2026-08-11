@@ -34,7 +34,7 @@ def test_comandos_exatos(router: CommandRouter, text: str, expected: Intent) -> 
     ("text", "expected"),
     [
         # Erros tipicos do Vosk com o modelo pequeno.
-        ("ligar lede", Intent.LED_ON),
+        ("ligar led e", Intent.LED_ON),
         ("liga a luz", Intent.LED_ON),
         ("abre o servo", Intent.SERVO_OPEN),
         ("qual a distancia", Intent.DISTANCE_READ),
@@ -72,8 +72,9 @@ def test_vocabulario_para_gramatica(router: CommandRouter) -> None:
 
 def test_limiar_configuravel() -> None:
     exigente = CommandRouter(threshold=0.99)
-    assert exigente.route("ligar lede").intent is Intent.UNKNOWN
-    assert exigente.route("ligar led").intent is Intent.LED_ON
+    # "abre o servo" so casa por similaridade, entao um limiar alto rejeita.
+    assert exigente.route("abre o servo").intent is Intent.UNKNOWN
+    assert exigente.route("abrir servo").intent is Intent.SERVO_OPEN
 
 
 # --------------------------------------------------------------------------- #

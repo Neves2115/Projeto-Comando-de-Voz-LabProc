@@ -131,7 +131,8 @@ def test_config_le_toml(tmp_path) -> None:
 mock = true
 
 [pins]
-leds = [17, 27]
+rgb_red = 5
+rgb_green = 6
 servo = 12
 
 [lcd]
@@ -144,7 +145,8 @@ servo_open_angle = 120.0
     config = AppConfig.load(arquivo)
 
     assert config.mock is True
-    assert config.pins.leds == (17, 27)
+    assert config.pins.rgb_red == 5
+    assert config.pins.rgb_green == 6
     assert config.pins.servo == 12
     assert config.lcd.address == 0x3F
     assert config.behavior.servo_open_angle == 120.0

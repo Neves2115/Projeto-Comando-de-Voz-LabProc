@@ -10,6 +10,7 @@ from ..commands.router import CommandRouter, Match
 from ..config import AppConfig
 from ..hardware.factory import HardwareSet
 from ..storage.db import Storage
+from ..tasks import BackgroundTask
 from ..utils import to_ascii
 
 logger = logging.getLogger(__name__)
@@ -27,7 +28,10 @@ class VoiceCommandController:
         self.hardware = hardware
         self.storage = storage
         self.router = router or CommandRouter(threshold=config.speech.match_threshold)
-        self.context = Context(config=config, hardware=hardware, storage=storage)
+        self.task = BackgroundTask()
+        self.context = Context(
+            config=config, hardware=hardware, storage=storage, task=self.task
+        )
         self.mode = AppMode.COMMAND
 
     # ------------------------------------------------------------------ #
@@ -44,6 +48,7 @@ class VoiceCommandController:
         match = self.router.route(text)
         self.context.heard = text
         self.context.number = match.number
+        self.context.color = match.color
         logger.info(
             "Ouvi %r -> %s (confianca %.2f)", text, match.intent.value, match.score
         )
@@ -51,7 +56,7 @@ class VoiceCommandController:
         handler = HANDLERS.get(match.intent, HANDLERS[Intent.UNKNOWN])
         try:
             reply = handler(self.context)
-        except Exception as exc:  # noqa: BLE001 - um handler nao derruba a central
+        except Exception as exc:
             logger.exception("Handler de %s falhou", match.intent.value)
             reply = Reply(f"Erro ao executar: {exc}", "Erro", str(exc)[:16], icon="erro")
 
@@ -131,6 +136,10 @@ class VoiceCommandController:
         if self.mode is AppMode.DICTATION or not self.config.speech.use_grammar:
             return None
         return self.router.vocabulary()
+
+    def close(self) -> None:
+        """Cancela qualquer tarefa em andamento. Chamado ao encerrar."""
+        self.task.cancel()
 
     def greet(self) -> None:
         self.hardware.lcd.show_lines("Central de Voz", self.hardware.trigger.prompt[:16])

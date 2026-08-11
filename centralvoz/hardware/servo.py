@@ -109,7 +109,7 @@ class GpioServo(ServoController):
     def _release(self) -> None:
         try:
             self._device.detach()
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
 
     def close(self) -> None:
@@ -118,5 +118,5 @@ class GpioServo(ServoController):
         try:
             self._device.detach()
             self._device.close()
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass

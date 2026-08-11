@@ -129,7 +129,7 @@ class VoskEngine:
 
     def load(self) -> "VoskEngine":
         try:
-            from vosk import Model, SetLogLevel  # noqa: PLC0415
+            from vosk import Model, SetLogLevel
         except ImportError as exc:
             raise SpeechUnavailable(
                 "vosk nao instalado. Rode: pip install vosk"
@@ -151,7 +151,7 @@ class VoskEngine:
         if self._model is None:
             raise SpeechUnavailable("Chame load() antes de reconhecer.")
 
-        from vosk import KaldiRecognizer  # noqa: PLC0415
+        from vosk import KaldiRecognizer
 
         if grammar:
             phrases = list(dict.fromkeys(grammar)) + ["[unk]"]
@@ -159,7 +159,7 @@ class VoskEngine:
                 recognizer = KaldiRecognizer(
                     self._model, self.sample_rate, json.dumps(phrases, ensure_ascii=False)
                 )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 # Alguma palavra fora do lexico do modelo derruba a gramatica.
                 logger.warning(
                     "Gramatica recusada pelo Vosk (%s). Usando reconhecimento livre.", exc

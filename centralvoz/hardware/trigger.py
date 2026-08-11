@@ -32,6 +32,14 @@ class Trigger(Peripheral):
         """True enquanto o usuario ainda esta falando."""
         raise NotImplementedError
 
+    def flush(self) -> None:
+        """Descarta ativacoes acumuladas.
+
+        Chamado depois de operacoes longas: sem isso, cada ENTER apertado
+        durante um comando demorado vira uma captura vazia quando o loop
+        principal volta a rodar.
+        """
+
     def close(self) -> None:
         pass
 
@@ -50,10 +58,14 @@ class GpioButton(Trigger):
     def is_active(self) -> bool:
         return bool(self._button.is_pressed)
 
+    def flush(self) -> None:
+        # O gpiozero nao enfileira eventos de wait_for_press, entao nada a fazer.
+        pass
+
     def close(self) -> None:
         try:
             self._button.close()
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
 
 
@@ -112,6 +124,14 @@ class KeyboardTrigger(Trigger):
 
     def stop_active(self) -> None:
         self._active.clear()
+
+    def flush(self) -> None:
+        self._active.clear()
+        while True:
+            try:
+                self._events.get_nowait()
+            except queue.Empty:
+                return
 
     def close(self) -> None:
         self._stop.set()

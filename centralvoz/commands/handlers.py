@@ -7,15 +7,19 @@ uma linha de frases no router -- sem tocar no controlador.
 
 from __future__ import annotations
 
+import logging
 import socket
+import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
+from ..tasks import BackgroundTask
 from ..config import AppConfig
 from ..hardware.factory import HardwareSet
+from ..hardware.rgb import COLORS, RAINBOW
 from ..storage.db import Storage
 from ..utils import humanize_seconds, normalize_text
 from .intents import AppMode, Intent
@@ -47,6 +51,10 @@ class Context:
     heard: str = ""
     #: Numero dito no comando atual, quando houver ("servo trinta graus" -> 30).
     number: int | None = None
+    #: Cor dita no comando atual ("acender azul" -> "azul").
+    color: str | None = None
+    #: Tarefa longa em execucao (monitoramento, festa). Injetada pelo controller.
+    task: "BackgroundTask | None" = None
     #: Ultimo conteudo util (transcricao, leitura, hora), para o "repetir".
     #: Precisa ser separado de `heard`, senao dizer "repetir" apagaria
     #: justamente o que deveria ser repetido.
@@ -55,6 +63,21 @@ class Context:
 
 Handler = Callable[[Context], Reply]
 HANDLERS: dict[Intent, Handler] = {}
+
+logger = logging.getLogger(__name__)
+
+
+def _start_task(ctx: Context, label: str, func) -> None:
+    """Inicia uma tarefa longa. Sem gerenciador, roda de forma sincrona."""
+    if ctx.task is not None:
+        ctx.task.start(label, func)
+        return
+    logger.debug("Sem gerenciador de tarefas: executando '%s' de forma sincrona", label)
+    func(threading.Event())
+
+
+def _stop_task(ctx: Context) -> bool:
+    return ctx.task.cancel() if ctx.task is not None else False
 
 
 def handles(intent: Intent) -> Callable[[Handler], Handler]:
@@ -72,20 +95,72 @@ def handles(intent: Intent) -> Callable[[Handler], Handler]:
 
 @handles(Intent.LED_ON)
 def _led_on(ctx: Context) -> Reply:
+    # Se veio cor junto ("ligar luz azul"), respeita a cor mesmo que o roteador
+    # tenha classificado como LED_ON.
+    if ctx.color:
+        return _led_color(ctx)
     ctx.hardware.leds.on()
-    return Reply("LED ligado", "LED", "ligado", icon="ok")
+    return Reply("Luz ligada", "Luz", "ligada", icon="ok")
+
+
+@handles(Intent.LED_COLOR)
+def _led_color(ctx: Context) -> Reply:
+    if not ctx.color:
+        nomes = ", ".join(list(COLORS)[:6])
+        return Reply(
+            f"Nao entendi a cor. Tente: {nomes}...", "Qual cor?", "diga a cor",
+            icon="alerta",
+        )
+    ctx.hardware.leds.set_named(ctx.color)
+    return Reply(f"Luz {ctx.color}", "Cor", ctx.color, icon="ok")
+
+
+@handles(Intent.LED_CYCLE)
+def _led_cycle(ctx: Context) -> Reply:
+    """Passa pelas cores do arco-iris em segundo plano."""
+    hardware = ctx.hardware
+    passo = ctx.config.behavior.color_cycle_step_s
+    duracao = ctx.config.behavior.party_duration_s
+
+    def tarefa(cancel) -> None:
+        fim = time.monotonic() + duracao
+        indice = 0
+        while time.monotonic() < fim and not cancel.is_set():
+            nome = RAINBOW[indice % len(RAINBOW)]
+            hardware.leds.set_named(nome)
+            hardware.lcd.show_lines("Trocando cor", nome)
+            indice += 1
+            if cancel.wait(passo):
+                break
+        hardware.leds.off()
+
+    _start_task(ctx, "ciclo de cores", tarefa)
+    return Reply("Passando pelas cores. Diga 'parar' para interromper.",
+                 "Arco-iris", "diga parar", icon="coracao")
+
+
+@handles(Intent.LED_BRIGHTNESS)
+def _led_brightness(ctx: Context) -> Reply:
+    if ctx.number is None:
+        return Reply("Diga o brilho, por exemplo: brilho cinquenta por cento.",
+                     "Brilho", "diga o valor", icon="alerta")
+    valor = max(0, min(100, ctx.number))
+    ctx.hardware.leds.brightness(valor / 100.0)
+    return Reply(f"Brilho em {valor}%", "Brilho", f"{valor}%", icon="ok")
 
 
 @handles(Intent.LED_OFF)
 def _led_off(ctx: Context) -> Reply:
+    _stop_task(ctx)
     ctx.hardware.leds.off()
-    return Reply("LED desligado", "LED", "desligado", icon="ok")
+    return Reply("Luz desligada", "Luz", "desligada", icon="ok")
 
 
 @handles(Intent.LED_BLINK)
 def _led_blink(ctx: Context) -> Reply:
-    ctx.hardware.leds.blink_async(times=5)
-    return Reply("LED piscando", "LED", "piscando", icon="ok")
+    ctx.hardware.leds.blink_async(times=5, color=ctx.color or "")
+    detalhe = ctx.color or "piscando"
+    return Reply("Luz piscando", "Luz", detalhe, icon="ok")
 
 
 # --------------------------------------------------------------------------- #
@@ -108,8 +183,8 @@ def _servo_close(ctx: Context) -> Reply:
 @handles(Intent.LED_BLINK_N)
 def _led_blink_n(ctx: Context) -> Reply:
     vezes = max(1, min(20, ctx.number or 3))
-    ctx.hardware.leds.blink_async(times=vezes)
-    return Reply(f"Piscando {vezes} vezes", "LED", f"{vezes} vezes", icon="ok")
+    ctx.hardware.leds.blink_async(times=vezes, color=ctx.color or "")
+    return Reply(f"Piscando {vezes} vezes", "Luz", f"{vezes} vezes", icon="ok")
 
 
 @handles(Intent.SERVO_ANGLE)
@@ -151,31 +226,71 @@ def _distance_read(ctx: Context) -> Reply:
 
 @handles(Intent.DISTANCE_MONITOR)
 def _distance_monitor(ctx: Context) -> Reply:
-    """Vigia o sensor por alguns segundos, avisando com LED e matriz."""
+    """Vigia o sensor em SEGUNDO PLANO.
+
+    Antes esse laco rodava dentro do handler e bloqueava o loop principal por
+    15 s: a central ficava surda, e os ENTER apertados nesse meio-tempo se
+    acumulavam na fila do stdin, disparando capturas vazias em sequencia quando
+    o controle voltava. Agora roda numa thread cancelavel e o loop continua
+    ouvindo -- basta dizer "parar".
+    """
     behavior = ctx.config.behavior
     hardware = ctx.hardware
-    deadline = time.monotonic() + behavior.monitor_duration_s
-    alerts = 0
-    closest = float("inf")
+    limite = behavior.distance_warning_cm
 
-    hardware.lcd.show_lines("Monitorando...", "")
-    while time.monotonic() < deadline:
-        value = hardware.distance.read_cm()
-        closest = min(closest, value)
-        if value <= behavior.distance_warning_cm:
-            alerts += 1
-            hardware.leds.on()
-            hardware.matrix.show_icon("alerta")
-            hardware.lcd.show_lines("ALERTA perto!", f"{value:.1f} cm")
+    def tarefa(cancel) -> None:
+        fim = time.monotonic() + behavior.monitor_duration_s
+        alertas = 0
+        menor = float("inf")
+
+        while time.monotonic() < fim and not cancel.is_set():
+            try:
+                valor = float(hardware.distance.read_cm())
+            except (TypeError, ValueError):
+                # Sensor ausente (NullPeripheral) devolve None.
+                hardware.lcd.show_lines("Sem sensor", "de distancia")
+                return
+
+            menor = min(menor, valor)
+            perto = valor <= limite
+            if perto:
+                alertas += 1
+                hardware.leds.set_named("vermelho")
+                hardware.matrix.show_icon("alerta")
+                hardware.lcd.show_lines("ALERTA perto!", f"{valor:.1f} cm")
+            else:
+                hardware.leds.set_named("verde")
+                hardware.matrix.show_icon("ok")
+                hardware.lcd.show_lines("Monitorando", f"{valor:.1f} cm")
+
+            if cancel.wait(0.4):
+                break
+
+        hardware.leds.off()
+        hardware.matrix.show_icon("ok")
+        if menor == float("inf"):
+            hardware.lcd.show_lines("Monitor", "encerrado")
         else:
-            hardware.leds.off()
-            hardware.matrix.show_icon("ok")
-            hardware.lcd.show_lines("Monitorando", f"{value:.1f} cm")
-        time.sleep(0.4)
+            hardware.lcd.show_lines("Fim monitor", f"min {menor:.1f} cm")
+        logger.info("Monitoramento encerrado: min %.1f cm, %d alertas", menor, alertas)
 
-    hardware.leds.off()
-    summary = f"Monitoramento encerrado. Minimo: {closest:.1f} cm, {alerts} alertas."
-    return Reply(summary, "Fim monitor", f"min {closest:.1f} cm", icon="ok", repeatable=True)
+    _start_task(ctx, "monitor de distancia", tarefa)
+    return Reply(
+        f"Monitorando por {behavior.monitor_duration_s:.0f} s. Diga 'parar' para interromper.",
+        "Monitorando", "diga parar", icon="ouvindo",
+    )
+
+
+@handles(Intent.STOP_TASK)
+def _stop_task_cmd(ctx: Context) -> Reply:
+    """Cancela o que estiver rodando em segundo plano."""
+    rotulo = ctx.task.label if ctx.task else ""
+    parou = _stop_task(ctx)
+    ctx.hardware.leds.stop_effect()
+
+    if not parou:
+        return Reply("Nada rodando no momento.", "Parar", "nada ativo", icon="ok")
+    return Reply(f"Cancelado: {rotulo}", "Cancelado", rotulo[:16], icon="ok")
 
 
 # --------------------------------------------------------------------------- #
@@ -269,14 +384,46 @@ def _help(ctx: Context) -> Reply:
 
 @handles(Intent.PARTY_MODE)
 def _party_mode(ctx: Context) -> Reply:
-    """Aciona tudo ao mesmo tempo. Otimo para a demonstracao."""
+    """Aciona tudo ao mesmo tempo, em segundo plano.
+
+    Roda por `behavior.party_duration_s` (12 s por padrao). A versao anterior
+    durava pouco mais de um segundo porque so percorria quatro icones.
+    """
     hardware = ctx.hardware
-    hardware.leds.blink_async(on_time=0.08, off_time=0.08, times=15)
-    hardware.servo.sweep_async(start=30.0, stop=150.0, step=15.0, delay=0.08)
-    for icone in ("coracao", "ok", "alerta", "coracao"):
-        hardware.matrix.show_icon(icone)
-        time.sleep(0.35)
-    return Reply("Modo festa!", "MODO FESTA", ":)", icon="coracao")
+    duracao = ctx.config.behavior.party_duration_s
+    icones = ("coracao", "ok", "alerta", "casa")
+
+    def tarefa(cancel) -> None:
+        fim_festa = time.monotonic() + duracao
+        passo = 0
+        angulo_aberto = True
+
+        while time.monotonic() < fim_festa and not cancel.is_set():
+            hardware.leds.set_named(RAINBOW[passo % len(RAINBOW)])
+            hardware.matrix.show_icon(icones[passo % len(icones)])
+
+            # O servo se move a cada 4 passos: mais que isso vira zumbido.
+            if passo % 4 == 0:
+                hardware.servo.move_to(150.0 if angulo_aberto else 30.0)
+                angulo_aberto = not angulo_aberto
+
+            restante = fim_festa - time.monotonic()
+            hardware.lcd.show_lines("* MODO FESTA *", f"{restante:.0f}s  :)")
+            passo += 1
+            if cancel.wait(0.25):
+                break
+
+        hardware.leds.off()
+        hardware.servo.move_to(90.0)
+        hardware.servo.release()
+        hardware.matrix.show_icon("ok")
+        hardware.lcd.show_lines("Fim da festa", "obrigado!")
+
+    _start_task(ctx, "modo festa", tarefa)
+    return Reply(
+        f"Modo festa por {duracao:.0f} s! Diga 'parar' para interromper.",
+        "* MODO FESTA *", "diga parar", icon="coracao",
+    )
 
 
 @handles(Intent.MATRIX_DRAW)
@@ -292,6 +439,7 @@ def _matrix_draw(ctx: Context) -> Reply:
 
 @handles(Intent.CLEAR)
 def _clear(ctx: Context) -> Reply:
+    _stop_task(ctx)
     ctx.hardware.leds.off()
     ctx.hardware.matrix.clear()
     ctx.hardware.lcd.clear()
@@ -299,7 +447,8 @@ def _clear(ctx: Context) -> Reply:
 
 
 @handles(Intent.SHUTDOWN)
-def _shutdown(_ctx: Context) -> Reply:
+def _shutdown(ctx: Context) -> Reply:
+    _stop_task(ctx)
     return Reply("Encerrando a central. Ate logo!", "Encerrando", "tchau", icon="ok", stop=True)
 
 

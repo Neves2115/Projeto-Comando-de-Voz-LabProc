@@ -108,7 +108,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _config_from_args(args: argparse.Namespace) -> AppConfig:
-    get = lambda nome, padrao=None: getattr(args, nome, padrao)  # noqa: E731
+    get = lambda nome, padrao=None: getattr(args, nome, padrao)
 
     overrides: dict = {}
     if get("mock"):
@@ -335,8 +335,12 @@ def _cmd_selftest(config: AppConfig) -> int:
     with build_hardware(config) as hardware:
         print(f"\nHardware: {hardware.summary()}\n")
 
-        print("1/5 LED ...")
-        hardware.leds.blink(times=3)
+        print("1/5 LED RGB ...")
+        for cor in ("vermelho", "verde", "azul", "amarelo", "ciano", "magenta"):
+            print(f"     {cor}")
+            hardware.leds.set_named(cor)
+            time.sleep(0.5)
+        hardware.leds.off()
 
         print("2/5 Servo ...")
         hardware.servo.move_to(0)
@@ -430,6 +434,7 @@ def _cmd_run(config: AppConfig) -> int:
         except KeyboardInterrupt:
             pass
         finally:
+            controller.close()
             storage.log_event("shutdown")
     return 0
 

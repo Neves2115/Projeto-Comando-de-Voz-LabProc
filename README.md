@@ -33,6 +33,7 @@ voz doctor
 voz doctor            # diagnóstico: GPIO, I2C, microfone, modelo
 voz hello             # teste mínimo: fale e veja o texto no LCD (só I2C)
 voz devices           # lista as entradas de áudio
+voz mic               # mede o nível de captura e diz se o ganho está bom
 voz selftest          # aciona cada periférico em sequência
 voz text --mock       # digita comandos, sem hardware e sem microfone
 voz say "ligar led"   # executa um comando único
@@ -72,14 +73,18 @@ qualquer problema de PWM.
 
 | Diga | O que acontece |
 |---|---|
-| ligar led / acender a luz | acende o LED |
-| desligar led / apagar a luz | apaga o LED |
+| ligar luz / acender led | acende o LED RGB em branco |
+| desligar luz / apagar led | apaga |
+| **acender \<cor\>** | vermelho, verde, azul, amarelo, ciano, magenta, rosa, laranja, roxo, violeta, turquesa, lima, dourado, branco |
+| trocar de cor / arco íris | passa pelas cores |
+| brilho N por cento | escala a cor atual |
 | piscar led | pisca 5 vezes |
 | abrir servo / abrir porta | servo vai para 90° |
 | fechar servo / fechar porta | servo volta para 0° |
 | varrer servo | varredura completa (teste) |
 | mostrar distância | lê o HC-SR04 e mostra no LCD |
-| monitorar distância / modo alerta | vigia por 15 s, alerta com LED e matriz |
+| monitorar distância / modo alerta | vigia em segundo plano; verde = livre, vermelho = perto |
+| **parar / cancelar** | interrompe o que estiver rodando |
 | **transcrever / modo ditado** | **tudo que você falar vira texto no LCD e é salvo** |
 | parar ditado | volta ao modo de comandos |
 | ler recados | mostra as últimas anotações, paginadas no LCD |
@@ -88,6 +93,11 @@ qualquer problema de PWM.
 | status do sistema | temperatura da CPU, uptime, IP |
 | ajuda | lista os comandos no próprio LCD |
 | limpar tela | apaga LCD, LED e matriz |
+| piscar led N vezes | ex.: "piscar led cinco vezes" |
+| servo N graus | ex.: "servo cento e oitenta graus" |
+| desenhar coração / casa / alerta | ícone na matriz |
+| modo festa | LED, servo e matriz juntos por 12 s (bom para demo) |
+| apagar recados | limpa as anotações |
 | desligar sistema | encerra o programa |
 
 O reconhecimento é **tolerante**: "ligar lede", "liga a luz" e "abre o servo"
@@ -105,15 +115,45 @@ Pinagem padrão (numeração BCM), toda configurável em `config.toml`:
 
 | Periférico | Pinos |
 |---|---|
-| LED | GPIO17 (+ resistor de 220 Ω para o GND) |
+| LED RGB | R=GPIO5, G=GPIO6, B=GPIO13, comum=3,3 V (ânodo comum) |
 | Servo | GPIO18 (PWM por hardware) |
 | Botão push-to-talk | GPIO26 → GND (pull-up interno) |
 | HC-SR04 | TRIG GPIO23, ECHO GPIO24 **com divisor de tensão** |
 | LCD 1602 I2C | SDA GPIO2, SCL GPIO3, VCC 5 V, GND |
-| Matriz 8x8 (74HC595) | DS GPIO5, SHCP GPIO6, STCP GPIO13 |
+| Matriz 8x8 (74HC595) | DS GPIO16, SHCP GPIO20, STCP GPIO21 |
 
 ⚠️ O ECHO do HC-SR04 entrega 5 V e o GPIO só aceita 3,3 V. Use divisor
 (1 kΩ + 2 kΩ) ou você vai queimar o pino. Detalhes em [`docs/ligacoes.md`](docs/ligacoes.md).
+
+## Reconhecimento ruim? Meça o microfone antes de mexer em qualquer outra coisa
+
+```bash
+voz mic
+```
+
+Grava 5 s, mostra o RMS em dBFS por canal e diz o que fazer. A faixa boa para
+voz é **RMS entre -30 e -12 dBFS**, com picos abaixo de -3.
+
+Ganho baixo é de longe a causa mais comum de transcrição ruim — adaptadores USB
+genéricos costumam vir com o capture quase no mínimo:
+
+```bash
+alsamixer          # F4 (Capture), setas para cima, ligue "Mic Boost"
+sudo alsactl store # salva para o próximo boot
+```
+
+Sinal saturado atrapalha tanto quanto sinal fraco; se o `voz mic` acusar
+saturação, **baixe** o ganho.
+
+Duas coisas que o projeto já resolve sozinho e vale saber:
+
+- **Canais.** Muitos adaptadores USB (CM108 e similares) expõem entrada estéreo
+  com o microfone ligado em só um dos canais. O projeto faz a média dos canais,
+  então isso não te prejudica — e o `voz mic` avisa quando detecta um canal mudo.
+- **Taxa.** Quando 16 kHz não está disponível, múltiplos exatos (48 kHz, 32 kHz)
+  são preferidos a 44,1 kHz: a reamostragem 3:1 é limpa, enquanto 44100 → 16000
+  tem razão 2,75625 e deixa artefato que o modelo pequeno sente. Para forçar:
+  `voz run --rate 48000`.
 
 ## Configuração
 
@@ -197,3 +237,110 @@ centralvoz/
 Cada periférico tem duas implementações — real e simulada — escolhidas **uma
 única vez** em `hardware/factory.py`, sempre registradas no log. Se o LCD não
 responder no I2C, só ele cai para simulado e o resto continua funcionando.
+
+
+---
+
+## Comandos longos rodam em segundo plano
+
+`monitorar distância`, `modo festa` e `trocar de cor` não bloqueiam a central:
+ela continua ouvindo enquanto eles rodam, e **`parar`** cancela a qualquer
+momento. Um comando novo também cancela o anterior.
+
+Isso é uma correção, não um enfeite — a versão anterior travava o loop principal
+durante o monitoramento. Os detalhes estão em [`docs/CODE_REVIEW.md`](docs/CODE_REVIEW.md).
+
+## "LED" é difícil para o modelo em português
+
+O modelo pequeno de português erra muito em siglas estrangeiras. Duas coisas
+ajudam:
+
+1. **Prefira "luz".** Todo comando de LED aceita "ligar luz", "acender luz
+   azul", "piscar luz três vezes". O modelo acerta "luz" com facilidade.
+2. **Já existem variantes fonéticas** ("lede", "lâmpada") registradas para o que
+   o Vosk costuma transcrever no lugar de "led".
+
+Se o seu Vosk insiste em transcrever alguma outra coisa, veja o que ele ouviu no
+log e adicione essa grafia à lista de frases em `commands/router.py` — é uma
+linha.
+
+### Comandos em inglês
+
+Existem variantes registradas ("turn on the light", "what time is it"), mas elas
+**não entram na gramática do Vosk**: o modelo de português não tem essas
+palavras no léxico e incluí-las faria o Vosk rejeitar a gramática inteira. Para
+usá-las de fato, baixe um modelo em inglês e aponte para ele:
+
+```bash
+voz run --model models/vosk-model-small-en-us-0.15
+```
+
+## Como adicionar um comando novo
+
+Três passos, sem tocar no controlador nem no loop de voz.
+
+**1. A intenção** — em `centralvoz/commands/intents.py`:
+
+```python
+class Intent(str, Enum):
+    ...
+    CONTAR_RECADOS = "contar_recados"
+```
+
+**2. As frases** — no fim de `_install_defaults()`, em `commands/router.py`:
+
+```python
+r(Intent.CONTAR_RECADOS, "quantos recados", "contar recados",
+  help_text="quantos recados")
+```
+
+Escreva 2–4 variações do jeito que as pessoas realmente falam. O casamento é
+aproximado, então não precisa prever cada erro de transcrição.
+
+**3. O que fazer** — em `commands/handlers.py`:
+
+```python
+@handles(Intent.CONTAR_RECADOS)
+def _contar_recados(ctx: Context) -> Reply:
+    total = ctx.storage.count_notes()
+    return Reply(f"Voce tem {total} recado(s).", "Recados", str(total), icon="ok")
+```
+
+Pronto. O decorator registra sozinho, a gramática do Vosk passa a incluir as
+frases novas, e `ajuda` já lista o comando.
+
+### O objeto `Reply`
+
+| Campo | Para quê |
+|---|---|
+| `message` | texto no terminal e no log |
+| `lcd_title` / `lcd_detail` | duas linhas fixas no LCD |
+| `lcd_text` | texto longo, pagina sozinho |
+| `icon` | ícone na matriz (`ok`, `alerta`, `erro`, `coracao`, `casa`, `ouvindo`) |
+| `repeatable` | `True` se o comando `repetir` deve trazê-lo de volta |
+| `next_mode` | troca para `AppMode.DICTATION` |
+| `stop` | encerra o programa |
+
+### Comandos com parâmetro
+
+Use o token `numero` na frase e informe os valores para a gramática:
+
+```python
+r(Intent.SERVO_ANGLE, "servo numero graus",
+  help_text="servo N graus", numbers=(0, 45, 90, 180))
+```
+
+No handler, o valor chega em `ctx.number`. O roteador entende tanto
+"servo trinta graus" quanto "servo 30 graus" — a conversão de português por
+extenso está em `commands/numbers.py`.
+
+A lista `numbers` existe porque o Vosk só reconhece palavras que estão na
+gramática: sem "noventa" ali, ele nunca transcreveria "servo noventa graus".
+
+### Testando sem falar
+
+```bash
+voz say "servo cento e oitenta graus"
+voz text --mock
+pytest
+```

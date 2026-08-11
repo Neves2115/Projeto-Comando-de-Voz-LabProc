@@ -123,3 +123,119 @@ def test_apagar_recados(controller) -> None:
 
     controller.handle_text("apagar recados")
     assert controller.storage.count_notes() == 0
+
+
+# --------------------------------------------------------------------------- #
+# LED RGB
+# --------------------------------------------------------------------------- #
+
+
+def test_acende_cor_nomeada(controller) -> None:
+    controller.handle_text("acender vermelho")
+    assert controller.hardware.leds.color == (1.0, 0.0, 0.0)
+    assert controller.hardware.leds.color_name == "vermelho"
+
+
+def test_cor_misturada(controller) -> None:
+    """Amarelo e vermelho + verde, sem azul."""
+    controller.handle_text("acender amarelo")
+    r, g, b = controller.hardware.leds.color
+    assert r > 0 and g > 0 and b == 0
+
+
+def test_cor_com_genero_flexionado(controller) -> None:
+    controller.handle_text("ligar luz amarela")
+    assert controller.hardware.leds.color_name == "amarelo"
+
+
+def test_desligar_apaga_todos_os_canais(controller) -> None:
+    controller.handle_text("acender azul")
+    assert controller.hardware.leds.is_on is True
+
+    controller.handle_text("desligar luz")
+    assert controller.hardware.leds.is_on is False
+    assert controller.hardware.leds.color == (0.0, 0.0, 0.0)
+
+
+def test_brilho_escala_a_cor(controller) -> None:
+    controller.handle_text("acender vermelho")
+    controller.handle_text("brilho cinquenta por cento")
+    r, _, _ = controller.hardware.leds.color
+    assert 0.4 < r < 0.6
+
+
+def test_cor_desconhecida_acende_branco(controller) -> None:
+    """'acender bege' nao tem cor conhecida: cai em LED_ON e acende branco."""
+    controller.handle_text("acender bege")
+    assert controller.hardware.leds.is_on is True
+
+
+def test_handler_de_cor_sem_cor_pede_esclarecimento(controller) -> None:
+    from centralvoz.commands.handlers import HANDLERS
+    from centralvoz.commands.intents import Intent
+
+    controller.context.color = None
+    reply = HANDLERS[Intent.LED_COLOR](controller.context)
+
+    assert controller.hardware.leds.is_on is False
+    assert "cor" in reply.message.lower()
+
+
+# --------------------------------------------------------------------------- #
+# Tarefas em segundo plano
+# --------------------------------------------------------------------------- #
+
+
+def test_monitorar_distancia_nao_bloqueia(controller) -> None:
+    """Regressao: o monitor rodava 15 s dentro do handler e travava o loop."""
+    import time
+
+    inicio = time.monotonic()
+    reply = controller.handle_text("monitorar distancia")
+    decorrido = time.monotonic() - inicio
+
+    # Retorna quase imediatamente, com a tarefa rodando em segundo plano.
+    assert decorrido < 1.0
+    assert controller.task.running is True
+    assert "parar" in reply.message.lower()
+
+    controller.task.cancel()
+
+
+def test_parar_cancela_a_tarefa(controller) -> None:
+    controller.handle_text("monitorar distancia")
+    assert controller.task.running is True
+
+    reply = controller.handle_text("parar")
+    assert controller.task.running is False
+    assert "cancelado" in reply.message.lower()
+
+
+def test_parar_sem_tarefa_nao_quebra(controller) -> None:
+    reply = controller.handle_text("parar")
+    assert "nada" in reply.message.lower()
+
+
+def test_novo_comando_cancela_a_tarefa_anterior(controller) -> None:
+    controller.handle_text("modo festa")
+    assert controller.task.running is True
+
+    controller.handle_text("monitorar distancia")
+    assert controller.task.label == "monitor de distancia"
+    controller.task.cancel()
+
+
+def test_modo_festa_respeita_a_duracao_configurada(controller) -> None:
+    """Regressao: a festa durava ~1 s porque so percorria quatro icones."""
+    assert controller.config.behavior.party_duration_s >= 10.0
+
+    reply = controller.handle_text("modo festa")
+    assert controller.task.running is True
+    assert "festa" in reply.message.lower()
+    controller.task.cancel()
+
+
+def test_close_cancela_tudo(controller) -> None:
+    controller.handle_text("monitorar distancia")
+    controller.close()
+    assert controller.task.running is False
