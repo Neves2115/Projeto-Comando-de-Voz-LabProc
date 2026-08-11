@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import array
 import logging
+import math
 import queue
 import wave
 from contextlib import contextmanager
@@ -34,9 +35,11 @@ logger = logging.getLogger(__name__)
 
 SAMPLE_WIDTH_BYTES = 2  # int16
 
-#: Taxas testadas, em ordem. 16 kHz e o ideal (formato nativo do Vosk);
-#: as demais cobrem os microfones USB comuns.
-CANDIDATE_RATES = (16000, 48000, 44100, 32000, 22050, 8000)
+#: Taxas testadas, nesta ordem. 16 kHz e o formato nativo do Vosk.
+#: Quando ele nao esta disponivel, multiplos exatos de 16000 (48k, 32k) sao
+#: preferidos a 44100: a reamostragem 3:1 e limpa, enquanto 44100 -> 16000 tem
+#: razao 2,75625 e introduz mais artefato -- que o modelo pequeno sente.
+CANDIDATE_RATES = (16000, 48000, 32000, 44100, 22050, 8000)
 
 
 class AudioUnavailable(RuntimeError):
@@ -93,12 +96,50 @@ def list_input_devices() -> list[dict]:
 
 
 def _to_mono(data: bytes, channels: int) -> bytes:
-    """Extrai um canal de audio intercalado (int16 little-endian)."""
+    """Mistura canais intercalados em mono (int16 little-endian).
+
+    Faz a MEDIA dos canais em vez de pegar so o primeiro. Muitos adaptadores
+    USB baratos (CM108 e afins) expoem entrada estereo com o microfone ligado
+    em apenas um dos canais -- pegando so o canal 0 voce pode acabar gravando
+    silencio puro. A media tambem ganha ~3 dB de relacao sinal/ruido quando os
+    dois canais tem o mesmo sinal.
+    """
     if channels <= 1:
         return data
+
     amostras = array.array("h")
     amostras.frombytes(data)
-    return amostras[0::channels].tobytes()
+    quadros = len(amostras) // channels
+    saida = array.array("h", bytes(2 * quadros))
+    for i in range(quadros):
+        base = i * channels
+        saida[i] = sum(amostras[base : base + channels]) // channels
+    return saida.tobytes()
+
+
+def analyze_levels(data: bytes, channels: int = 1) -> list[dict]:
+    """Nivel de cada canal: RMS em dBFS, pico e amostras saturadas."""
+    amostras = array.array("h")
+    amostras.frombytes(data)
+
+    resultados = []
+    for canal in range(channels):
+        fatia = amostras[canal::channels]
+        if not fatia:
+            resultados.append({"rms_dbfs": -120.0, "peak_dbfs": -120.0, "clip_pct": 0.0})
+            continue
+        soma = sum(v * v for v in fatia)
+        rms = (soma / len(fatia)) ** 0.5
+        pico = max(abs(v) for v in fatia)
+        saturadas = sum(1 for v in fatia if abs(v) >= 32000)
+        resultados.append(
+            {
+                "rms_dbfs": 20 * math.log10(rms / 32768) if rms > 0 else -120.0,
+                "peak_dbfs": 20 * math.log10(pico / 32768) if pico > 0 else -120.0,
+                "clip_pct": 100.0 * saturadas / len(fatia),
+            }
+        )
+    return resultados
 
 
 class Microphone:
@@ -197,8 +238,12 @@ class Microphone:
     # ------------------------------------------------------------------ #
 
     @contextmanager
-    def stream(self) -> Iterator[queue.Queue]:
-        """Abre o microfone e entrega uma fila de blocos mono (bytes)."""
+    def stream(self, mono: bool = True) -> Iterator[queue.Queue]:
+        """Abre o microfone e entrega uma fila de blocos de audio.
+
+        `mono=False` entrega os canais como vieram -- usado so pelo `voz mic`,
+        que precisa medir cada canal separadamente.
+        """
         sd = self._sd or _import_sounddevice()
         blocks: queue.Queue = queue.Queue()
         canais = self.device_channels
@@ -206,7 +251,8 @@ class Microphone:
         def callback(indata, _frames, _time, status) -> None:
             if status:
                 logger.debug("Status do stream de audio: %s", status)
-            blocks.put(_to_mono(bytes(indata), canais))
+            bruto = bytes(indata)
+            blocks.put(_to_mono(bruto, canais) if mono else bruto)
 
         # O tamanho do bloco escala com a taxa para manter ~250 ms por bloco.
         block_size = max(
@@ -231,6 +277,29 @@ class Microphone:
             yield blocks
 
     # ------------------------------------------------------------------ #
+
+    def measure(self, seconds: float = 4.0) -> dict:
+        """Grava alguns segundos e mede o nivel de cada canal."""
+        import time as _time
+
+        pedacos: list[bytes] = []
+        with self.stream(mono=False) as blocos:
+            fim = _time.monotonic() + seconds
+            while _time.monotonic() < fim:
+                try:
+                    pedacos.append(blocos.get(timeout=0.2))
+                except queue.Empty:
+                    continue
+
+        bruto = b"".join(pedacos)
+        return {
+            "sample_rate": self.sample_rate,
+            "channels": self.device_channels,
+            "seconds": (len(bruto) / SAMPLE_WIDTH_BYTES / max(1, self.device_channels))
+            / max(1, self.sample_rate),
+            "levels": analyze_levels(bruto, self.device_channels),
+            "raw": bruto,
+        }
 
     def duration_of(self, chunks: list[bytes]) -> float:
         """Duracao em segundos do audio ja convertido para mono."""

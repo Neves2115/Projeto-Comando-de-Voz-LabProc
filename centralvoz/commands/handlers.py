@@ -17,7 +17,7 @@ from typing import Callable
 from ..config import AppConfig
 from ..hardware.factory import HardwareSet
 from ..storage.db import Storage
-from ..utils import humanize_seconds
+from ..utils import humanize_seconds, normalize_text
 from .intents import AppMode, Intent
 
 
@@ -45,6 +45,8 @@ class Context:
     storage: Storage
     #: Ultima fala crua, usada para dizer "nao entendi <isso>".
     heard: str = ""
+    #: Numero dito no comando atual, quando houver ("servo trinta graus" -> 30).
+    number: int | None = None
     #: Ultimo conteudo util (transcricao, leitura, hora), para o "repetir".
     #: Precisa ser separado de `heard`, senao dizer "repetir" apagaria
     #: justamente o que deveria ser repetido.
@@ -101,6 +103,26 @@ def _servo_open(ctx: Context) -> Reply:
 def _servo_close(ctx: Context) -> Reply:
     angle = ctx.hardware.servo.move_to(ctx.config.behavior.servo_closed_angle)
     return Reply(f"Servo fechado ({angle:.0f} graus)", "Servo fechado", f"{angle:.0f} graus", icon="ok")
+
+
+@handles(Intent.LED_BLINK_N)
+def _led_blink_n(ctx: Context) -> Reply:
+    vezes = max(1, min(20, ctx.number or 3))
+    ctx.hardware.leds.blink_async(times=vezes)
+    return Reply(f"Piscando {vezes} vezes", "LED", f"{vezes} vezes", icon="ok")
+
+
+@handles(Intent.SERVO_ANGLE)
+def _servo_angle(ctx: Context) -> Reply:
+    if ctx.number is None:
+        return Reply(
+            "Nao entendi o angulo. Diga por exemplo: servo noventa graus.",
+            "Servo", "diga o angulo", icon="alerta",
+        )
+    angulo = ctx.hardware.servo.move_to(ctx.number)
+    return Reply(
+        f"Servo em {angulo:.0f} graus", "Servo", f"{angulo:.0f} graus", icon="ok"
+    )
 
 
 @handles(Intent.SERVO_SWEEP)
@@ -194,6 +216,12 @@ def _notes_list(ctx: Context) -> Reply:
     return Reply(f"{len(notes)} recado(s): {joined}", lcd_text=joined, icon="ok", repeatable=True)
 
 
+@handles(Intent.NOTES_CLEAR)
+def _notes_clear(ctx: Context) -> Reply:
+    total = ctx.storage.clear_notes()
+    return Reply(f"{total} recado(s) apagado(s).", "Recados", "apagados", icon="ok")
+
+
 @handles(Intent.REPEAT_LAST)
 def _repeat_last(ctx: Context) -> Reply:
     if not ctx.last_content:
@@ -237,6 +265,29 @@ def _help(ctx: Context) -> Reply:
     commands = CommandRouter().help_lines()
     joined = " . ".join(commands)
     return Reply(f"Comandos disponiveis: {joined}", lcd_text=joined, icon="ok", repeatable=True)
+
+
+@handles(Intent.PARTY_MODE)
+def _party_mode(ctx: Context) -> Reply:
+    """Aciona tudo ao mesmo tempo. Otimo para a demonstracao."""
+    hardware = ctx.hardware
+    hardware.leds.blink_async(on_time=0.08, off_time=0.08, times=15)
+    hardware.servo.sweep_async(start=30.0, stop=150.0, step=15.0, delay=0.08)
+    for icone in ("coracao", "ok", "alerta", "coracao"):
+        hardware.matrix.show_icon(icone)
+        time.sleep(0.35)
+    return Reply("Modo festa!", "MODO FESTA", ":)", icon="coracao")
+
+
+@handles(Intent.MATRIX_DRAW)
+def _matrix_draw(ctx: Context) -> Reply:
+    """O desenho vem da propria fala: 'desenhar coracao' -> icone coracao."""
+    from ..hardware.matrix import ICONS
+
+    dito = normalize_text(ctx.heard)
+    nome = next((icone for icone in ICONS if icone in dito), "ok")
+    ctx.hardware.matrix.show_icon(nome)
+    return Reply(f"Desenhando {nome}", "Desenho", nome, icon=nome)
 
 
 @handles(Intent.CLEAR)

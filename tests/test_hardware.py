@@ -239,3 +239,92 @@ def test_resolve_model_dir_rejeita_pasta_irrelevante(tmp_path) -> None:
     (tmp_path / "lixo").mkdir()
     assert resolve_model_dir(tmp_path / "lixo") is None
     assert resolve_model_dir(tmp_path / "nao-existe") is None
+
+
+def _criar_modelo_compilado(raiz):
+    """Layout do vosk-model-small-pt-0.3: tudo na raiz, sem am/conf/graph."""
+    (raiz / "ivector").mkdir(parents=True)
+    for nome in (
+        "final.mdl", "Gr.fst", "HCLr.fst", "mfcc.conf",
+        "phones.txt", "README", "disambig_tid.int", "word_boundary.int",
+    ):
+        (raiz / nome).write_text("x")
+    return raiz
+
+
+def test_aceita_modelo_com_layout_compilado(tmp_path) -> None:
+    """Regressao: o modelo small de portugues nao tem am/conf/graph."""
+    from centralvoz.speech.vosk_engine import looks_like_model, resolve_model_dir
+
+    modelo = _criar_modelo_compilado(tmp_path / "vosk-model-small-pt-0.3")
+    assert looks_like_model(modelo) is True
+    assert resolve_model_dir(modelo) == modelo
+
+
+def test_aceita_modelo_compilado_em_subpasta(tmp_path) -> None:
+    from centralvoz.speech.vosk_engine import resolve_model_dir
+
+    raiz = tmp_path / "vosk-model-small-pt-0.3"
+    interno = _criar_modelo_compilado(raiz / "vosk-model-small-pt-0.3")
+    assert resolve_model_dir(raiz) == interno
+
+
+def test_pasta_com_arquivos_soltos_nao_e_modelo(tmp_path) -> None:
+    from centralvoz.speech.vosk_engine import looks_like_model
+
+    solta = tmp_path / "qualquer"
+    solta.mkdir()
+    (solta / "README").write_text("x")
+    (solta / "notas.txt").write_text("x")
+    assert looks_like_model(solta) is False
+
+
+# --------------------------------------------------------------------------- #
+# Audio
+# --------------------------------------------------------------------------- #
+
+
+def test_mono_faz_media_dos_canais() -> None:
+    """Regressao: pegar so o canal 0 gravava silencio em adaptadores USB
+    que ligam o microfone em apenas um dos canais."""
+    import array
+
+    from centralvoz.audio.microphone import _to_mono
+
+    # canal 0 mudo, canal 1 com sinal
+    estereo = array.array("h", [0, 8000, 0, -8000]).tobytes()
+    mono = array.array("h")
+    mono.frombytes(_to_mono(estereo, 2))
+
+    assert mono.tolist() == [4000, -4000]
+    assert any(v != 0 for v in mono)
+
+
+def test_mono_nao_altera_audio_de_um_canal() -> None:
+    import array
+
+    from centralvoz.audio.microphone import _to_mono
+
+    dados = array.array("h", [1, -2, 3]).tobytes()
+    assert _to_mono(dados, 1) == dados
+
+
+def test_analyze_levels_detecta_canal_mudo() -> None:
+    import array
+
+    from centralvoz.audio.microphone import analyze_levels
+
+    estereo = array.array("h", [0, 16000] * 50).tobytes()
+    niveis = analyze_levels(estereo, 2)
+
+    assert niveis[0]["rms_dbfs"] < -100      # canal mudo
+    assert niveis[1]["rms_dbfs"] > -20       # canal com sinal
+
+
+def test_taxas_preferem_multiplos_exatos_de_16k() -> None:
+    """44100 -> 16000 nao e razao inteira e degrada mais que 48000 -> 16000."""
+    from centralvoz.audio.microphone import CANDIDATE_RATES
+
+    assert CANDIDATE_RATES[0] == 16000
+    assert CANDIDATE_RATES.index(48000) < CANDIDATE_RATES.index(44100)
+    assert CANDIDATE_RATES.index(32000) < CANDIDATE_RATES.index(44100)

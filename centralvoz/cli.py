@@ -24,6 +24,7 @@ from .commands.intents import AppMode
 from .app.runner import VoiceLoop
 from .audio.microphone import AudioUnavailable, Microphone, list_input_devices
 from .config import AppConfig
+from .utils import ensure_dir
 from .hardware.factory import build_hardware
 from .logging_setup import setup_logging
 from .speech.vosk_engine import SpeechUnavailable, VoskEngine
@@ -91,6 +92,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="teste minimo: fale no microfone e veja o texto no LCD (so I2C, sem GPIO)",
     )
     sub.add_parser("devices", help="lista dispositivos de entrada de audio")
+    mic = sub.add_parser(
+        "mic", help="mede o nivel do microfone e diz se o ganho esta bom"
+    )
+    mic.add_argument("--seconds", type=float, default=5.0, help="duracao do teste")
+    mic.add_argument("--save", action="store_true", help="salva o .wav gravado")
     sub.add_parser("selftest", help="aciona cada periferico em sequencia")
     sub.add_parser("text", help="loop de comandos digitados (sem microfone)")
     sub.add_parser("run", help="loop de voz com push-to-talk")
@@ -142,6 +148,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "devices":
         return _cmd_devices()
+
+    if args.command == "mic":
+        return _cmd_mic(config, args.seconds, args.save)
 
     if args.command == "hello":
         return _cmd_hello(config)
@@ -247,6 +256,77 @@ def _cmd_hello(config: AppConfig) -> int:
             hardware.close()
 
     print("\nTeste encerrado.")
+    return 0
+
+
+def _cmd_mic(config: AppConfig, seconds: float, save: bool) -> int:
+    """Mede o nivel de captura. Reconhecimento ruim quase sempre e ganho baixo."""
+    microphone = Microphone(config.audio)
+    try:
+        microphone.check()
+    except AudioUnavailable as exc:
+        print(f"\n{exc}\n")
+        return 1
+
+    print(
+        f"\nGravando {seconds:.0f} s a {microphone.sample_rate} Hz "
+        f"({microphone.device_channels} canal(is)).\n"
+        "FALE NORMALMENTE, na distancia que voce usaria de verdade.\n"
+    )
+    resultado = microphone.measure(seconds)
+    niveis = resultado["levels"]
+
+    print(f"Capturados {resultado['seconds']:.1f} s.\n")
+    for indice, nivel in enumerate(niveis):
+        print(
+            f"  canal {indice}: RMS {nivel['rms_dbfs']:6.1f} dBFS   "
+            f"pico {nivel['peak_dbfs']:6.1f} dBFS   "
+            f"saturacao {nivel['clip_pct']:.2f}%"
+        )
+
+    melhor = max(niveis, key=lambda n: n["rms_dbfs"])
+    print()
+
+    # Faixa alvo para voz: RMS entre -30 e -12 dBFS, picos abaixo de -3.
+    if melhor["rms_dbfs"] < -45:
+        print("  [PROBLEMA] Sinal muito fraco. O Vosk vai errar muito.")
+        print("             Aumente o ganho de captura:")
+        print("                 alsamixer  ->  F4 (Capture)  ->  setas para cima")
+        print("                 procure tambem 'Mic Boost' e ligue")
+        print("             Depois salve com: sudo alsactl store")
+    elif melhor["rms_dbfs"] < -30:
+        print("  [ATENCAO] Sinal fraco. Funciona, mas da para melhorar.")
+        print("            Aproxime o microfone ou suba o ganho no alsamixer.")
+    elif melhor["clip_pct"] > 1.0 or melhor["peak_dbfs"] > -1.0:
+        print("  [PROBLEMA] Sinal saturado (distorcido). Isso atrapalha tanto")
+        print("             quanto o sinal fraco. Reduza o ganho no alsamixer.")
+    else:
+        print("  [ ok ] Nivel bom para reconhecimento.")
+
+    if len(niveis) > 1:
+        vivos = [i for i, n in enumerate(niveis) if n["rms_dbfs"] > -60]
+        if len(vivos) == 1:
+            print(
+                f"\n  Nota: so o canal {vivos[0]} tem sinal. E normal em "
+                "adaptadores USB baratos;\n        o projeto mistura os canais, "
+                "entao isso nao e problema."
+            )
+        elif not vivos:
+            print(
+                "\n  [PROBLEMA] Nenhum canal captou nada. Verifique se o microfone"
+                "\n             esta no conector certo (rosa = entrada) e se nao"
+                "\n             esta mudo no alsamixer (tecla M)."
+            )
+
+    if save:
+        from .audio.microphone import _to_mono
+
+        mono = _to_mono(resultado["raw"], microphone.device_channels)
+        caminho = microphone.save_wav([mono], ensure_dir(config.recordings_dir))
+        print(f"\n  Audio salvo em {caminho}")
+        print("  Ouca com:  aplay " + str(caminho))
+
+    print()
     return 0
 
 

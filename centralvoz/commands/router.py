@@ -20,6 +20,7 @@ from difflib import SequenceMatcher
 
 from ..utils import normalize_text, tokens
 from .intents import Intent
+from .numbers import PLACEHOLDER, number_to_words, replace_numbers
 
 NEGATIONS = {"nao", "nunca", "jamais", "para", "pare"}
 
@@ -30,6 +31,9 @@ class Match:
     score: float
     heard: str
     phrase: str = ""
+    #: Numero dito pelo usuario, quando o comando aceita parametro
+    #: ("servo trinta graus" -> 30).
+    number: int | None = None
 
     @property
     def understood(self) -> bool:
@@ -42,6 +46,10 @@ class Rule:
     phrases: tuple[str, ...]
     #: Frase curta mostrada no comando "ajuda".
     help_text: str = ""
+    #: Valores usados so para expandir a gramatica do Vosk quando a frase tem
+    #: o token `numero`. O Vosk precisa ter "trinta" no vocabulario para
+    #: conseguir reconhecer "servo trinta graus".
+    numbers: tuple[int, ...] = ()
     _token_phrases: list[list[str]] = field(default_factory=list, repr=False)
 
     def __post_init__(self) -> None:
@@ -56,16 +64,42 @@ class CommandRouter:
 
     # -- registro ----------------------------------------------------- #
 
-    def register(self, intent: Intent, *phrases: str, help_text: str = "") -> None:
-        self._rules.append(Rule(intent=intent, phrases=phrases, help_text=help_text))
+    def register(
+        self,
+        intent: Intent,
+        *phrases: str,
+        help_text: str = "",
+        numbers: tuple[int, ...] = (),
+    ) -> None:
+        """Registra um comando.
+
+        Use o token `numero` na frase para aceitar parametro:
+            register(Intent.SERVO_ANGLE, "servo numero graus", numbers=ANGULOS)
+        """
+        self._rules.append(
+            Rule(intent=intent, phrases=phrases, help_text=help_text, numbers=numbers)
+        )
 
     @property
     def rules(self) -> list[Rule]:
         return list(self._rules)
 
     def vocabulary(self) -> list[str]:
-        """Frases para a gramatica do Vosk (uma linha por variacao)."""
-        phrases = {normalize_text(p) for rule in self._rules for p in rule.phrases}
+        """Frases para a gramatica do Vosk (uma linha por variacao).
+
+        Frases com parametro viram varias entradas concretas: "servo numero
+        graus" com numbers=(0, 30, 90) gera "servo zero graus",
+        "servo trinta graus" e "servo noventa graus".
+        """
+        phrases: set[str] = set()
+        for rule in self._rules:
+            for phrase in rule.phrases:
+                normalizada = normalize_text(phrase)
+                if PLACEHOLDER not in normalizada.split():
+                    phrases.add(normalizada)
+                    continue
+                for valor in rule.numbers:
+                    phrases.add(normalizada.replace(PLACEHOLDER, number_to_words(valor)))
         return sorted(p for p in phrases if p)
 
     def help_lines(self) -> list[str]:
@@ -78,25 +112,39 @@ class CommandRouter:
         if not heard:
             return Match(Intent.UNKNOWN, 0.0, text)
 
-        spoken = heard.split()
-        best = Match(Intent.UNKNOWN, 0.0, text)
+        # Numeros viram um token unico ("trinta" -> "numero"), o que permite
+        # que uma so regra cubra qualquer valor.
+        spoken, numeros = replace_numbers(heard)
+        numero = numeros[0] if numeros else None
+        best = Match(Intent.UNKNOWN, 0.0, text, number=numero)
+        best_size = 0
 
         for rule in self._rules:
             for phrase, phrase_tokens in zip(rule.phrases, rule._token_phrases):
                 if not phrase_tokens:
                     continue
                 score, start = _best_window_score(spoken, phrase_tokens)
-                if score <= best.score:
+
+                # Desempate por especificidade: com a mesma pontuacao, vence a
+                # frase mais longa. Sem isso, "piscar led cinco vezes" casaria
+                # com "piscar led" (1.00) e o parametro seria perdido.
+                if (score, len(phrase_tokens)) <= (best.score, best_size):
                     continue
                 if _is_negated(spoken, start):
                     continue
-                best = Match(rule.intent, round(score, 3), text, phrase)
+                best = Match(rule.intent, round(score, 3), text, phrase, numero)
+                best_size = len(phrase_tokens)
 
         if best.score < self.threshold:
-            return Match(Intent.UNKNOWN, best.score, text)
+            return Match(Intent.UNKNOWN, best.score, text, number=numero)
         return best
 
     # -- comandos padrao ---------------------------------------------- #
+
+    #: Angulos oferecidos ao Vosk para "servo N graus".
+    ANGULOS = (0, 15, 30, 45, 60, 90, 120, 135, 150, 180)
+    #: Contagens oferecidas para "piscar led N vezes".
+    CONTAGENS = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
 
     def _install_defaults(self) -> None:
         r = self.register
@@ -106,6 +154,8 @@ class CommandRouter:
           help_text="desligar led")
         r(Intent.LED_BLINK, "piscar led", "piscar luz", "pisca pisca",
           help_text="piscar led")
+        r(Intent.LED_BLINK_N, "piscar led numero vezes", "piscar numero vezes",
+          help_text="piscar led N vezes", numbers=self.CONTAGENS)
 
         r(Intent.SERVO_OPEN, "abrir servo", "abrir porta", "girar servo",
           help_text="abrir servo")
@@ -113,6 +163,9 @@ class CommandRouter:
           help_text="fechar servo")
         r(Intent.SERVO_SWEEP, "varrer servo", "girar tudo", "testar servo",
           help_text="varrer servo")
+        r(Intent.SERVO_ANGLE, "servo numero graus", "girar servo para numero graus",
+          "colocar servo em numero graus",
+          help_text="servo N graus", numbers=self.ANGULOS)
 
         r(Intent.DISTANCE_READ, "mostrar distancia", "ler distancia", "ver distancia",
           "qual a distancia", help_text="mostrar distancia")
@@ -126,6 +179,8 @@ class CommandRouter:
           help_text="parar ditado")
         r(Intent.NOTES_LIST, "ler recados", "mostrar recados", "listar notas",
           help_text="ler recados")
+        r(Intent.NOTES_CLEAR, "apagar recados", "limpar recados", "esquecer tudo",
+          help_text="apagar recados")
         r(Intent.REPEAT_LAST, "repetir", "repita", "de novo",
           help_text="repetir")
 
@@ -135,6 +190,11 @@ class CommandRouter:
           help_text="status do sistema")
         r(Intent.HELP, "ajuda", "quais comandos", "listar comandos",
           help_text="ajuda")
+        r(Intent.PARTY_MODE, "modo festa", "festa", "comemorar",
+          help_text="modo festa")
+        r(Intent.MATRIX_DRAW, "desenhar coracao", "desenhar casa", "desenhar alerta",
+          "desenhar ok", "mostrar desenho",
+          help_text="desenhar coracao/casa/alerta")
         r(Intent.CLEAR, "limpar tela", "limpar display", "apagar tudo",
           help_text="limpar tela")
         r(Intent.SHUTDOWN, "desligar sistema", "encerrar programa", "tchau",

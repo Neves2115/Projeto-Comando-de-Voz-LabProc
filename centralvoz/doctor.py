@@ -220,7 +220,9 @@ def _check_speech(config: AppConfig) -> list[Check]:
         checks.append(
             Check(FAIL, "Modelo de fala", f"{model} nao parece um modelo Vosk",
                   f"Contem: {conteudo}\n"
-                  f"Esperado: am, conf, graph, ivector\n"
+                  f"Esperado um destes layouts:\n"
+                  f"  classico:  am/ conf/ graph/ ivector/\n"
+                  f"  compilado: final.mdl HCLr.fst Gr.fst ivector/\n"
                   f"Reextraia: rm -rf {model} && bash scripts/download_model.sh")
         )
     else:

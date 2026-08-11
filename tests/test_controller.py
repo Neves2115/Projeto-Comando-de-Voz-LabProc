@@ -103,3 +103,23 @@ def test_gramatica_muda_conforme_o_modo(controller) -> None:
 
 def test_shutdown_sinaliza_parada(controller) -> None:
     assert controller.handle_text("desligar sistema").stop is True
+
+
+def test_servo_vai_para_o_angulo_falado(controller) -> None:
+    controller.handle_text("servo cento e vinte graus")
+    assert controller.hardware.servo.angle == pytest.approx(120.0)
+
+
+def test_angulo_fora_da_faixa_e_limitado(controller) -> None:
+    controller.handle_text("servo trezentos graus")
+    assert controller.hardware.servo.angle <= 180.0
+
+
+def test_apagar_recados(controller) -> None:
+    controller.handle_text("transcrever")
+    controller.handle_text("comprar cafe")
+    controller.handle_text("parar ditado")
+    assert controller.storage.count_notes() >= 1
+
+    controller.handle_text("apagar recados")
+    assert controller.storage.count_notes() == 0

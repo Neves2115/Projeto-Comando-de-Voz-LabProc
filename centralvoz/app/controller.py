@@ -43,6 +43,7 @@ class VoiceCommandController:
     def _handle_command(self, text: str) -> Reply:
         match = self.router.route(text)
         self.context.heard = text
+        self.context.number = match.number
         logger.info(
             "Ouvi %r -> %s (confianca %.2f)", text, match.intent.value, match.score
         )

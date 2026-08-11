@@ -9,10 +9,12 @@ class Intent(str, Enum):
     LED_ON = "led_on"
     LED_OFF = "led_off"
     LED_BLINK = "led_blink"
+    LED_BLINK_N = "led_blink_n"
 
     SERVO_OPEN = "servo_open"
     SERVO_CLOSE = "servo_close"
     SERVO_SWEEP = "servo_sweep"
+    SERVO_ANGLE = "servo_angle"
 
     DISTANCE_READ = "distance_read"
     DISTANCE_MONITOR = "distance_monitor"
@@ -20,11 +22,14 @@ class Intent(str, Enum):
     DICTATION_START = "dictation_start"
     DICTATION_STOP = "dictation_stop"
     NOTES_LIST = "notes_list"
+    NOTES_CLEAR = "notes_clear"
     REPEAT_LAST = "repeat_last"
 
     CLOCK = "clock"
     SYSTEM_STATUS = "system_status"
     HELP = "help"
+    PARTY_MODE = "party_mode"
+    MATRIX_DRAW = "matrix_draw"
     CLEAR = "clear"
     SHUTDOWN = "shutdown"
 

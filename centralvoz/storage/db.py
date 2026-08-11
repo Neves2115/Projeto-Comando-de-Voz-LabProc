@@ -128,6 +128,19 @@ class Storage:
             for row in rows
         ]
 
+    def clear_notes(self) -> int:
+        """Apaga todos os recados e devolve quantos foram removidos."""
+        if self._conn is None:
+            return 0
+        try:
+            total = self.count_notes()
+            self._conn.execute("DELETE FROM notes")
+            self._conn.commit()
+            return total
+        except sqlite3.Error as exc:
+            logger.warning("Falha ao apagar recados: %s", exc)
+            return 0
+
     def count_notes(self) -> int:
         if self._conn is None:
             return 0
