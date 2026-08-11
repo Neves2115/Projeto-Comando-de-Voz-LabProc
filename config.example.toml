@@ -30,17 +30,17 @@ rgb_active_high = false
 servo = 18                # GPIO18 = PWM por hardware
 button = 26               # botao push-to-talk: GPIO26 -> GND
 # Buzzers do kit Freenove.
-buzzer_active = 17        # so liga/desliga (tem oscilador proprio)
-buzzer_passive = 27       # toca notas (precisa de PWM)
+buzzer_active = 12      # so liga/desliga (tem oscilador proprio)
+buzzer_passive = 4       # toca notas (precisa de PWM)
 buzzer_active_high = true # false se o seu modulo aciona em nivel baixo
 
 distance_trigger = 14
 distance_echo = 15       # use divisor de tensao! o HC-SR04 devolve 5V
 
 # Matriz 8x8 (74HC595). NAO pode colidir com os pinos do LED RGB acima.
-matrix_data = 16
-matrix_clock = 20
-matrix_latch = 21
+matrix_data = 17
+matrix_clock = 22
+matrix_latch = 27
 
 [lcd]
 enabled = true

@@ -124,8 +124,8 @@ Pinagem padrão (numeração BCM), toda configurável em `config.toml`:
 | Botão push-to-talk | GPIO26 → GND (pull-up interno) |
 | HC-SR04 | TRIG GPIO23, ECHO GPIO24 **com divisor de tensão** |
 | LCD 1602 I2C | SDA GPIO2, SCL GPIO3, VCC 5 V, GND |
-| Buzzer ativo | GPIO17 |
-| Buzzer passivo | GPIO27 (PWM para tocar notas) |
+| Buzzer ativo | GPIO12 |
+| Buzzer passivo | GPIO4 (PWM para tocar notas) |
 | Matriz 8x8 (74HC595) | DS GPIO16, SHCP GPIO20, STCP GPIO21 |
 
 ⚠️ O ECHO do HC-SR04 entrega 5 V e o GPIO só aceita 3,3 V. Use divisor
