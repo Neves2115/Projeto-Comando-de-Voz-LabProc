@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "centralvoz"
+version = "0.6.0"
+description = "Central de comandos por voz offline para Raspberry Pi 3 + kit Freenove"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+
+# Dependencias minimas para rodar em modo simulado (--mock) em qualquer maquina.
+dependencies = []
+
+[project.optional-dependencies]
+# Reconhecimento de fala + captura de audio.
+voice = [
+    "vosk>=0.3.45",
+    "sounddevice>=0.4.6",
+]
+# Hardware real no Raspberry Pi.
+pi = [
+    "gpiozero>=2.0",
+    "lgpio>=0.2.2.0",
+    "smbus2>=0.4.3",
+]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+voz = "centralvoz.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["centralvoz*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

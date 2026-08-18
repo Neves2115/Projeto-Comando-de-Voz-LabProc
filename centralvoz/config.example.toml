@@ -1,0 +1,86 @@
+# Copie para config.toml e ajuste. Tudo aqui e opcional.
+#
+#   cp config.example.toml config.toml
+#
+# Precedencia: argumento de linha de comando > variavel de ambiente >
+# este arquivo > padrao do codigo.
+
+# true = nao toca em nenhum pino GPIO (roda em qualquer maquina)
+mock = false
+
+# Backend de GPIO. Deixe comentado para escolher sozinho (prefere lgpio).
+# pin_factory = "pigpio"
+
+# "button" = botao fisico no GPIO26; "keyboard" = ENTER.
+# Use "keyboard" enquanto o botao nao estiver ligado.
+trigger = "button"
+
+log_level = "INFO"
+save_recordings = false   # true grava os .wav para depurar reconhecimento ruim
+
+[pins]
+# LED RGB do kit Freenove. Com o terminal comum no 3,3 V o modulo e de
+# ANODO COMUM: acende em nivel baixo. Se as cores sairem trocadas (voce pede
+# vermelho e acende ciano), inverta rgb_active_high.
+rgb_red = 5
+rgb_green = 6
+rgb_blue = 13
+rgb_active_high = false
+
+servo = 18                # GPIO18 = PWM por hardware
+button = 26               # botao push-to-talk: GPIO26 -> GND
+# Buzzers do kit Freenove.
+buzzer_active = 12        # so liga/desliga (tem oscilador proprio)
+buzzer_passive = 4        # toca notas (precisa de PWM)
+buzzer_active_high = true # false se o seu modulo aciona em nivel baixo
+
+# ATENCAO: GPIO14/15 sao o UART. Desative o console serial antes de usar:
+#   sudo raspi-config -> Interface Options -> Serial Port -> login shell = No
+distance_trigger = 14
+distance_echo = 15        # use divisor de tensao! o HC-SR04 devolve 5V
+
+# Matriz 8x8 (74HC595).
+matrix_clock = 17         # SHCP / SRCLK
+matrix_data = 22          # DS / SER
+matrix_latch = 27         # STCP / RCLK
+
+[lcd]
+enabled = true
+i2c_bus = 1
+# address = "0x27"        # descoberto sozinho; force se o i2cdetect mostrar outro
+cols = 16
+rows = 2
+page_delay_s = 2.2        # tempo de cada pagina quando o texto nao cabe
+
+[matrix]
+enabled = true            # desligue se nao tiver a matriz ligada
+refresh_hz = 160.0
+quarter_turns = 1         # giros de 90 graus anti-horario nos desenhos
+                          # (depende de como a placa esta na bancada)
+
+[buzzer]
+active_enabled = true
+passive_enabled = true
+feedback_sounds = true    # bipe no alerta de distancia e ao encerrar
+
+[audio]
+# O projeto negocia a taxa com o microfone. 16000 e so a preferencia inicial:
+# se o dispositivo recusar, usa 48000/44100 e o Vosk reamostra internamente.
+sample_rate = 16000
+# input_device = 2        # veja os indices com: voz devices
+max_utterance_s = 12.0
+min_utterance_s = 0.35
+
+[speech]
+model_path = "models/vosk-model-small-pt-0.3"
+use_grammar = true        # restringe o vocabulario aos comandos conhecidos
+match_threshold = 0.70    # menor = aceita mais, erra mais
+
+[behavior]
+servo_open_angle = 90.0
+servo_closed_angle = 0.0
+distance_warning_cm = 20.0
+monitor_duration_s = 20.0   # duracao do "monitorar distancia"
+party_duration_s = 12.0     # duracao do "modo festa" e do ciclo de cores
+color_cycle_step_s = 0.35   # tempo em cada cor
+dictation_timeout_s = 45.0
